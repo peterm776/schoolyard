@@ -133,7 +133,7 @@
     <script type="module">
         // Firebase Imports
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signOut, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithRedirect, getRedirectResult, signOut, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, collection, doc, getDoc, setDoc, onSnapshot, addDoc, updateDoc, deleteDoc, query, where, writeBatch, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         // --- FIREBASE CONFIG & INITIALIZATION ---
@@ -187,6 +187,19 @@
         let activeChart = null; // To hold the chart instance
 
         // --- AUTHENTICATION ---
+
+        // Handle the result of a redirect authentication
+        getRedirectResult(auth)
+            .catch((error) => {
+                console.error("Redirect Result Error:", error);
+                const authMessage = document.getElementById('auth-message');
+                authMessage.innerHTML = `
+                    <p class="text-red-600 font-bold text-center">Login Failed!</p>
+                    <p class="mt-2 text-sm text-slate-600">Could not complete sign-in. Please try again.</p>
+                `;
+                document.getElementById('login-button').classList.remove('hidden');
+            });
+
         onAuthStateChanged(auth, async (user) => {
             if (user) {
                 try {
@@ -244,15 +257,8 @@
 
         document.getElementById('login-button').addEventListener('click', () => {
             const provider = new GoogleAuthProvider();
-            signInWithPopup(auth, provider).catch(error => {
-                console.error("Authentication Error:", error);
-                const authMessage = document.getElementById('auth-message');
-                authMessage.innerHTML = `
-                    <p class="text-red-600 font-bold text-center">Login Failed!</p>
-                    <p class="mt-2 text-sm text-slate-600">Please add this exact domain to your Firebase authorized domains list:</p>
-                    <textarea readonly class="mt-1 w-full h-20 text-xs font-mono bg-slate-200 p-2 rounded" onclick="this.select()">${window.location.origin}</textarea>
-                `;
-            });
+            // Use signInWithRedirect instead of signInWithPopup
+            signInWithRedirect(auth, provider);
         });
 
         document.getElementById('logout-button').addEventListener('click', () => signOut(auth));
@@ -835,5 +841,6 @@
     </script>
 </body>
 </html>
+
 
 
