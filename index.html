@@ -205,6 +205,7 @@
                 try {
                     const userRef = doc(db, dbPaths.users, user.uid);
                     let userDoc = await getDoc(userRef);
+                    const isAdminEmail = user.email === 'peter.massaua@gmail.com';
 
                     if (!userDoc.exists()) {
                         const isAnonymous = user.isAnonymous;
@@ -212,10 +213,14 @@
                             uid: user.uid,
                             email: isAnonymous ? `anonymous_${user.uid.substring(0,5)}@schoolyard.com` : user.email,
                             displayName: isAnonymous ? 'Anonymous User' : user.displayName,
-                            role: 'student', // First-time users are students, admin can elevate
+                            role: isAdminEmail ? 'admin' : 'student',
                         };
                         await setDoc(userRef, newUserProfile);
                         userDoc = await getDoc(userRef);
+                    } else if (isAdminEmail && userDoc.data().role !== 'admin') {
+                        // If user exists and should be an admin, update their role.
+                        await updateDoc(userRef, { role: 'admin' });
+                        userDoc = await getDoc(userRef); // Re-fetch to get updated data
                     }
                     
                     state.user = userDoc.data();
@@ -841,6 +846,4 @@
     </script>
 </body>
 </html>
-
-
 
