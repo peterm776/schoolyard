@@ -134,7 +134,7 @@
         // Firebase Imports
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signOut, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, collection, doc, getDoc, setDoc, onSnapshot, addDoc, updateDoc, deleteDoc, query, where, writeBatch } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFirestore, collection, doc, getDoc, setDoc, onSnapshot, addDoc, updateDoc, deleteDoc, query, where, writeBatch, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         // --- FIREBASE CONFIG & INITIALIZATION ---
         const firebaseConfig = {
@@ -189,34 +189,47 @@
         // --- AUTHENTICATION ---
         onAuthStateChanged(auth, async (user) => {
             if (user) {
-                const userRef = doc(db, dbPaths.users, user.uid);
-                let userDoc = await getDoc(userRef);
+                try {
+                    const userRef = doc(db, dbPaths.users, user.uid);
+                    let userDoc = await getDoc(userRef);
 
-                if (!userDoc.exists()) {
-                    const isAnonymous = user.isAnonymous;
-                    const newUserProfile = {
-                        uid: user.uid,
-                        email: isAnonymous ? `anonymous_${user.uid.substring(0,5)}@schoolyard.com` : user.email,
-                        displayName: isAnonymous ? 'Anonymous User' : user.displayName,
-                        role: 'student', // First-time users are students, admin can elevate
-                    };
-                    await setDoc(userRef, newUserProfile);
-                    userDoc = await getDoc(userRef);
+                    if (!userDoc.exists()) {
+                        const isAnonymous = user.isAnonymous;
+                        const newUserProfile = {
+                            uid: user.uid,
+                            email: isAnonymous ? `anonymous_${user.uid.substring(0,5)}@schoolyard.com` : user.email,
+                            displayName: isAnonymous ? 'Anonymous User' : user.displayName,
+                            role: 'student', // First-time users are students, admin can elevate
+                        };
+                        await setDoc(userRef, newUserProfile);
+                        userDoc = await getDoc(userRef);
+                    }
+                    
+                    state.user = userDoc.data();
+                    
+                    // Show app and a loading message
+                    document.getElementById('auth-container').classList.add('hidden');
+                    document.getElementById('app-container').classList.remove('hidden');
+                    document.getElementById('content').innerHTML = `<div class="text-center text-slate-500 font-semibold p-8">Loading school data...</div>`;
+
+                    document.getElementById('user-info').innerHTML = `
+                        <p class="font-semibold text-slate-800">${state.user.displayName}</p>
+                        <p class="text-xs text-slate-500 capitalize">${state.user.role}</p>
+                    `;
+                    
+                    // First, load all initial data to prevent race conditions
+                    await loadInitialData();
+
+                    // Then, set up listeners for real-time updates
+                    setupRealtimeListeners();
+                    
+                    // Finally, populate navigation and render the initial page with all data present
+                    populateNav();
+                    router();
+                } catch (error) {
+                    console.error("Error during login sequence:", error);
+                    document.getElementById('content').innerHTML = `<div class="text-center text-red-500 font-semibold p-8">Could not load application data. Please refresh the page.</div>`;
                 }
-                
-                state.user = userDoc.data();
-                
-                document.getElementById('auth-container').classList.add('hidden');
-                document.getElementById('app-container').classList.remove('hidden');
-
-                document.getElementById('user-info').innerHTML = `
-                    <p class="font-semibold text-slate-800">${state.user.displayName}</p>
-                    <p class="text-xs text-slate-500 capitalize">${state.user.role}</p>
-                `;
-                
-                setupRealtimeListeners();
-                populateNav();
-                router();
             } else {
                 document.getElementById('auth-message').textContent = 'Please sign in to continue.';
                 document.getElementById('login-button').classList.remove('hidden');
@@ -262,6 +275,32 @@
             addListener(dbPaths.courses, 'courses');
             addListener(dbPaths.grades, 'grades');
             addListener(dbPaths.attendance, 'attendance');
+        }
+
+        // --- INITIAL DATA LOAD ---
+        async function loadInitialData() {
+            try {
+                const collectionsToLoad = [
+                    { path: dbPaths.students, key: 'students' },
+                    { path: dbPaths.courses, key: 'courses' },
+                    { path: dbPaths.grades, key: 'grades' },
+                    { path: dbPaths.attendance, key: 'attendance' }
+                ];
+
+                const snapshots = await Promise.all(
+                    collectionsToLoad.map(c => getDocs(collection(db, c.path)))
+                );
+
+                snapshots.forEach((snapshot, index) => {
+                    const key = collectionsToLoad[index].key;
+                    state[key] = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                });
+            } catch (error) {
+                console.error("Error loading initial data:", error);
+                document.getElementById('content').innerHTML = `<p class="text-red-500">Error loading school data. Please refresh.</p>`;
+                // re-throw to be caught by onAuthStateChanged
+                throw error;
+            }
         }
 
         // --- UI & MODAL HELPERS (Global Scope) ---
@@ -796,4 +835,5 @@
     </script>
 </body>
 </html>
+
 
