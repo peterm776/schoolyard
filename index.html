@@ -1,0 +1,799 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Schoolyard - School Management System</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f8fafc;
+        }
+        .sidebar {
+            transition: transform 0.3s ease-in-out;
+        }
+        .main-content {
+            transition: margin-left 0.3s ease-in-out;
+        }
+        /* Custom scrollbar for better aesthetics */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f1f1f1;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #a3a3a3;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #737373;
+        }
+        #auth-container {
+            background-image: url('https://placehold.co/1200x800/e0e7ff/6366f1?text=Welcome+to+Schoolyard');
+            background-size: cover;
+            background-position: center;
+        }
+        .nav-link.active {
+            background-color: #0284c7; /* sky-600 */
+            color: white;
+        }
+        @media (max-width: 768px) {
+            .sidebar {
+                transform: translateX(-100%);
+            }
+            .sidebar.open {
+                transform: translateX(0);
+            }
+            .main-content {
+                margin-left: 0;
+            }
+        }
+    </style>
+</head>
+<body class="bg-slate-100">
+
+    <!-- Auth Container -->
+    <div id="auth-container" class="h-screen w-screen flex items-center justify-center">
+        <div class="bg-white/80 backdrop-blur-sm p-10 rounded-2xl shadow-2xl text-center max-w-sm">
+            <div class="flex items-center justify-center mb-6">
+                 <svg xmlns="http://www.w3.org/2000/svg" class="h-10 w-10 text-sky-500 mr-3" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M12 2L1 9l4 2.5V17a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-5.5L23 9l-11-7zm-2 9h4v5h-4v-5zm-2-2h8v2h-8V9zM5 12.5L12 16l7-3.5V17h-2v-4.5l-5 2.5-5-2.5V17H5v-4.5z"/>
+                </svg>
+                <h1 class="text-4xl font-bold text-slate-800">Schoolyard</h1>
+            </div>
+            <p class="text-slate-600 mb-8">Your All-In-One School Management System</p>
+            <div id="auth-message-container" class="bg-slate-100 p-4 rounded-lg mb-4">
+                <p id="auth-message" class="text-slate-700 font-medium">Authenticating...</p>
+            </div>
+            <button id="login-button" class="w-full bg-slate-800 text-white font-semibold py-3 px-4 rounded-lg hover:bg-slate-900 transition-colors flex items-center justify-center hidden">
+                 <svg class="w-6 h-6 mr-3" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="white"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/><path d="M1 1h22v22H1z" fill="none"/></svg>
+                Sign in with Google
+            </button>
+        </div>
+    </div>
+
+    <!-- Main App Container -->
+    <div id="app-container" class="flex h-screen hidden">
+        <!-- Sidebar -->
+        <aside id="sidebar" class="sidebar fixed top-0 left-0 h-full bg-slate-900 text-white w-64 p-6 z-20 md:translate-x-0 overflow-y-auto">
+            <div class="flex items-center mb-10">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-sky-400 mr-3" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M12 2L1 9l4 2.5V17a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-5.5L23 9l-11-7zm-2 9h4v5h-4v-5zm-2-2h8v2h-8V9zM5 12.5L12 16l7-3.5V17h-2v-4.5l-5 2.5-5-2.5V17H5v-4.5z"/>
+                </svg>
+                <h1 class="text-2xl font-bold text-white">Schoolyard</h1>
+            </div>
+            <nav id="nav">
+                <!-- Nav links will be dynamically populated -->
+            </nav>
+        </aside>
+
+        <!-- Main Content -->
+        <main id="main-content" class="main-content flex-1 md:ml-64 p-6 md:p-8 overflow-y-auto">
+             <!-- Header -->
+            <div class="flex justify-between items-center mb-8">
+                 <button id="sidebar-toggle" class="md:hidden p-2 rounded-md bg-slate-200 text-slate-800">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16m-7 6h7" />
+                    </svg>
+                </button>
+                <h2 id="page-title" class="text-3xl font-bold text-slate-800">Dashboard</h2>
+                <div class="flex items-center">
+                    <div id="user-info" class="text-right"></div>
+                    <button id="logout-button" class="ml-4 bg-red-500 text-white p-2 rounded-full hover:bg-red-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M3 3a1 1 0 00-1 1v12a1 1 0 102 0V4a1 1 0 00-1-1zm10.293 9.293a1 1 0 001.414 1.414l3-3a1 1 0 000-1.414l-3-3a1 1 0 10-1.414 1.414L14.586 9H7a1 1 0 100 2h7.586l-1.293 1.293z" clip-rule="evenodd" /></svg>
+                    </button>
+                </div>
+            </div>
+
+            <div id="content" class="bg-white rounded-xl shadow-md p-6">
+                <!-- Content will be dynamically inserted here -->
+            </div>
+        </main>
+    </div>
+
+    <!-- Modal Template -->
+    <div id="modal-template" class="fixed inset-0 bg-black bg-opacity-50 z-50 hidden items-center justify-center p-4" onclick="closeModal()">
+        <div class="modal-content bg-white rounded-lg shadow-xl p-8 w-full max-w-lg" onclick="event.stopPropagation()">
+            <div class="flex justify-between items-center mb-4">
+                <h3 id="modal-title" class="text-2xl font-bold text-slate-800"></h3>
+                <button onclick="closeModal()" class="text-slate-500 hover:text-slate-800 text-3xl leading-none">&times;</button>
+            </div>
+            <div id="modal-body"></div>
+        </div>
+    </div>
+
+
+    <script type="module">
+        // Firebase Imports
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signOut, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, doc, getDoc, setDoc, onSnapshot, addDoc, updateDoc, deleteDoc, query, where, writeBatch } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // --- FIREBASE CONFIG & INITIALIZATION ---
+        const firebaseConfig = {
+          apiKey: "AIzaSyDmz8vvvAdytc_0p3gJMYJ4VsPMtvuL4N4",
+          authDomain: "schoolyard-c4660.firebaseapp.com",
+          projectId: "schoolyard-c4660",
+          storageBucket: "schoolyard-c4660.appspot.com",
+          messagingSenderId: "103489319452",
+          appId: "1:103489319452:web:4683ed351d8313eae165d9"
+        };
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'schoolyard-c4660';
+        
+        const dbPaths = {
+            users: `artifacts/${appId}/public/data/users`,
+            students: `artifacts/${appId}/public/data/students`,
+            courses: `artifacts/${appId}/public/data/courses`,
+            grades: `artifacts/${appId}/public/data/grades`,
+            attendance: `artifacts/${appId}/public/data/attendance`,
+        }
+
+        // --- GLOBAL APP STATE ---
+        const state = {
+            user: null, // { uid, email, displayName, role }
+            students: [],
+            courses: [],
+            grades: [],
+            attendance: [],
+            unsubscribeListeners: [],
+        };
+
+        // --- ROLE-BASED NAVIGATION ---
+        const allNavLinks = {
+            dashboard: { href: '#dashboard', text: 'Dashboard', icon: `<svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>`},
+            students: { href: '#students', text: 'Students', icon: `<svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.653-.124-1.282-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.653.124-1.282.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/></svg>`},
+            courses: { href: '#courses', text: 'Courses', icon: `<svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M12 6.253v11.494m-9-5.747h18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>`},
+            gradebook: { href: '#gradebook', text: 'Gradebook', icon: `<svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7v8a2 2 0 002 2h4M8 7a2 2 0 012-2h4a2 2 0 012 2v8a2 2 0 01-2 2h-4a2 2 0 01-2-2z"/></svg>`},
+            attendance: { href: '#attendance', text: 'Attendance', icon: `<svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>`},
+            reports: { href: '#reports', text: 'Reports', icon: `<svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>`},
+        };
+
+        const rolesConfig = {
+            admin: ['dashboard', 'students', 'courses', 'gradebook', 'attendance', 'reports'],
+            teacher: ['dashboard', 'courses', 'gradebook', 'attendance'],
+            student: ['dashboard', 'gradebook', 'attendance'],
+        };
+        
+        let activeChart = null; // To hold the chart instance
+
+        // --- AUTHENTICATION ---
+        onAuthStateChanged(auth, async (user) => {
+            if (user) {
+                const userRef = doc(db, dbPaths.users, user.uid);
+                let userDoc = await getDoc(userRef);
+
+                if (!userDoc.exists()) {
+                    const isAnonymous = user.isAnonymous;
+                    const newUserProfile = {
+                        uid: user.uid,
+                        email: isAnonymous ? `anonymous_${user.uid.substring(0,5)}@schoolyard.com` : user.email,
+                        displayName: isAnonymous ? 'Anonymous User' : user.displayName,
+                        role: 'student', // First-time users are students, admin can elevate
+                    };
+                    await setDoc(userRef, newUserProfile);
+                    userDoc = await getDoc(userRef);
+                }
+                
+                state.user = userDoc.data();
+                
+                document.getElementById('auth-container').classList.add('hidden');
+                document.getElementById('app-container').classList.remove('hidden');
+
+                document.getElementById('user-info').innerHTML = `
+                    <p class="font-semibold text-slate-800">${state.user.displayName}</p>
+                    <p class="text-xs text-slate-500 capitalize">${state.user.role}</p>
+                `;
+                
+                setupRealtimeListeners();
+                populateNav();
+                router();
+            } else {
+                document.getElementById('auth-message').textContent = 'Please sign in to continue.';
+                document.getElementById('login-button').classList.remove('hidden');
+                state.user = null;
+                document.getElementById('auth-container').classList.remove('hidden');
+                document.getElementById('app-container').classList.add('hidden');
+                state.unsubscribeListeners.forEach(unsub => unsub());
+                state.unsubscribeListeners = [];
+                document.getElementById('content').innerHTML = '';
+            }
+        });
+
+        document.getElementById('login-button').addEventListener('click', () => {
+            const provider = new GoogleAuthProvider();
+            signInWithPopup(auth, provider).catch(error => {
+                console.error("Authentication Error:", error);
+                const authMessage = document.getElementById('auth-message');
+                authMessage.innerHTML = `
+                    <p class="text-red-600 font-bold text-center">Login Failed!</p>
+                    <p class="mt-2 text-sm text-slate-600">Please add this exact domain to your Firebase authorized domains list:</p>
+                    <textarea readonly class="mt-1 w-full h-20 text-xs font-mono bg-slate-200 p-2 rounded" onclick="this.select()">${window.location.origin}</textarea>
+                `;
+            });
+        });
+
+        document.getElementById('logout-button').addEventListener('click', () => signOut(auth));
+
+        // --- REALTIME DATA LISTENERS ---
+        function setupRealtimeListeners() {
+            state.unsubscribeListeners.forEach(unsub => unsub());
+            state.unsubscribeListeners = [];
+
+            const addListener = (path, stateKey) => {
+                const q = query(collection(db, path));
+                const unsubscribe = onSnapshot(q, (snapshot) => {
+                    state[stateKey] = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                    router(); 
+                }, (error) => console.error(`Error listening to ${stateKey}:`, error));
+                state.unsubscribeListeners.push(unsubscribe);
+            };
+
+            addListener(dbPaths.students, 'students');
+            addListener(dbPaths.courses, 'courses');
+            addListener(dbPaths.grades, 'grades');
+            addListener(dbPaths.attendance, 'attendance');
+        }
+
+        // --- UI & MODAL HELPERS (Global Scope) ---
+        window.openModal = (title, body) => {
+            document.getElementById('modal-title').innerText = title;
+            document.getElementById('modal-body').innerHTML = body;
+            document.getElementById('modal-template').classList.remove('hidden');
+            document.getElementById('modal-template').classList.add('flex');
+        };
+
+        window.closeModal = () => {
+            document.getElementById('modal-template').classList.add('hidden');
+            document.getElementById('modal-template').classList.remove('flex');
+            document.getElementById('modal-title').innerText = '';
+            document.getElementById('modal-body').innerHTML = '';
+        };
+        
+        // --- UTILITY FUNCTIONS ---
+        function getLetterGrade(score) {
+            if (score >= 90) return 'A';
+            if (score >= 80) return 'B';
+            if (score >= 70) return 'C';
+            if (score >= 60) return 'D';
+            return 'F';
+        }
+
+        function calculateAverageGrade() {
+            if (state.grades.length === 0) return 'N/A';
+            const total = state.grades.reduce((sum, g) => sum + parseFloat(g.score), 0);
+            return (total / state.grades.length).toFixed(1);
+        }
+        
+        function calculateAttendanceRate() {
+            const presentCount = state.attendance.filter(a => a.status === 'present').length;
+            if(state.attendance.length === 0) return 'N/A';
+            return ((presentCount / state.attendance.length) * 100).toFixed(1);
+        }
+        
+        // --- RENDER FUNCTIONS ---
+        // Defined before 'routes' object to avoid ReferenceError
+        
+        function renderDashboard() {
+            const content = document.getElementById('content');
+            if(activeChart) {
+                activeChart.destroy();
+                activeChart = null;
+            }
+
+            const studentCount = state.students.length;
+            const courseCount = state.courses.length;
+            
+            const gradeCounts = state.grades.reduce((acc, grade) => {
+                const letter = getLetterGrade(grade.score);
+                acc[letter] = (acc[letter] || 0) + 1;
+                return acc;
+            }, { 'A': 0, 'B': 0, 'C': 0, 'D': 0, 'F': 0 });
+            
+            content.innerHTML = `
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                    <div class="bg-sky-100 p-6 rounded-lg shadow-sm"><h3 class="text-slate-500 text-lg font-medium">Total Students</h3><p class="text-4xl font-bold text-sky-800">${studentCount}</p></div>
+                    <div class="bg-indigo-100 p-6 rounded-lg shadow-sm"><h3 class="text-slate-500 text-lg font-medium">Total Courses</h3><p class="text-4xl font-bold text-indigo-800">${courseCount}</p></div>
+                    <div class="bg-emerald-100 p-6 rounded-lg shadow-sm"><h3 class="text-slate-500 text-lg font-medium">Average Grade</h3><p class="text-4xl font-bold text-emerald-800">${calculateAverageGrade()}%</p></div>
+                    <div class="bg-amber-100 p-6 rounded-lg shadow-sm"><h3 class="text-slate-500 text-lg font-medium">Attendance Rate</h3><p class="text-4xl font-bold text-amber-800">${calculateAttendanceRate()}%</p></div>
+                </div>
+                <div class="mt-8 bg-white p-6 rounded-lg shadow-sm"><h3 class="text-xl font-bold text-slate-700 mb-4">Grade Distribution</h3><canvas id="gradeChart"></canvas></div>`;
+            
+            const ctx = document.getElementById('gradeChart').getContext('2d');
+            activeChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: ['A', 'B', 'C', 'D', 'F'],
+                    datasets: [{
+                        label: '# of Grades', data: Object.values(gradeCounts),
+                        backgroundColor: ['rgba(75, 192, 192, 0.6)','rgba(54, 162, 235, 0.6)','rgba(255, 206, 86, 0.6)','rgba(255, 159, 64, 0.6)','rgba(255, 99, 132, 0.6)'],
+                        borderColor: ['rgba(75, 192, 192, 1)','rgba(54, 162, 235, 1)','rgba(255, 206, 86, 1)','rgba(255, 159, 64, 1)','rgba(255, 99, 132, 1)'],
+                        borderWidth: 1
+                    }]
+                },
+                options: { scales: { y: { beginAtZero: true } }, responsive: true, maintainAspectRatio: false }
+            });
+        }
+
+        function renderStudents() {
+            const isAdmin = state.user.role === 'admin';
+            let content = `<div class="flex justify-between items-center mb-6">
+                <h3 class="text-2xl font-bold text-slate-700">Student Roster</h3>
+                ${isAdmin ? `<button onclick="openStudentModal()" class="bg-sky-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-sky-700 transition-colors">+ Add Student</button>` : ''}
+            </div>
+            <div class="overflow-x-auto"><table class="w-full text-left">
+                <thead><tr class="bg-slate-100 text-slate-600 uppercase text-sm">
+                    <th class="py-3 px-4">Name</th><th class="py-3 px-4">Email</th><th class="py-3 px-4">Grade Level</th>
+                    ${isAdmin ? `<th class="py-3 px-4 text-right">Actions</th>` : ''}
+                </tr></thead><tbody>`;
+            
+            state.students.forEach(s => {
+                content += `<tr class="border-b border-slate-200 hover:bg-slate-50">
+                    <td class="py-3 px-4 font-medium text-slate-800">${s.name}</td>
+                    <td class="py-3 px-4 text-slate-600">${s.email}</td>
+                    <td class="py-3 px-4 text-slate-600">${s.gradeLevel}</td>
+                    ${isAdmin ? `<td class="py-3 px-4 text-right">
+                        <button onclick="openStudentModal('${s.id}')" class="text-indigo-600 hover:text-indigo-800 font-semibold mr-4">Edit</button>
+                        <button onclick="deleteStudent('${s.id}')" class="text-red-600 hover:text-red-800 font-semibold">Delete</button>
+                    </td>` : ''}
+                </tr>`;
+            });
+
+            content += `</tbody></table></div>`;
+            document.getElementById('content').innerHTML = content;
+        }
+
+        function renderCourses() {
+            const isAdmin = state.user.role === 'admin';
+            let content = `<div class="flex justify-between items-center mb-6">
+                <h3 class="text-2xl font-bold text-slate-700">Course Catalog</h3>
+                ${isAdmin ? `<button onclick="openCourseModal()" class="bg-sky-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-sky-700 transition-colors">+ Add Course</button>` : ''}
+            </div>
+            <div class="overflow-x-auto"><table class="w-full text-left">
+                <thead><tr class="bg-slate-100 text-slate-600 uppercase text-sm">
+                    <th class="py-3 px-4">Course Name</th><th class="py-3 px-4">Teacher</th>
+                    ${isAdmin ? `<th class="py-3 px-4 text-right">Actions</th>` : ''}
+                </tr></thead><tbody>`;
+
+            state.courses.forEach(c => {
+                content += `<tr class="border-b border-slate-200 hover:bg-slate-50">
+                    <td class="py-3 px-4 font-medium text-slate-800">${c.name}</td>
+                    <td class="py-3 px-4 text-slate-600">${c.teacher}</td>
+                     ${isAdmin ? `<td class="py-3 px-4 text-right">
+                        <button onclick="openCourseModal('${c.id}')" class="text-indigo-600 hover:text-indigo-800 font-semibold mr-4">Edit</button>
+                        <button onclick="deleteCourse('${c.id}')" class="text-red-600 hover:text-red-800 font-semibold">Delete</button>
+                    </td>` : ''}
+                </tr>`;
+            });
+            content += `</tbody></table></div>`;
+            document.getElementById('content').innerHTML = content;
+        }
+        
+        function renderGradebook() {
+            let content = `<div class="flex items-center mb-6">
+                <label for="course-select" class="mr-4 font-semibold text-slate-700">Select Course:</label>
+                <select id="course-select" class="p-2 border rounded-md">
+                    <option value="">-- Choose a course --</option>
+                    ${state.courses.map(c => `<option value="${c.id}">${c.name}</option>`).join('')}
+                </select>
+            </div>
+            <div id="gradebook-table"></div>`;
+            document.getElementById('content').innerHTML = content;
+
+            document.getElementById('course-select').addEventListener('change', (e) => {
+                displayGradebookForCourse(e.target.value);
+            });
+        }
+
+        function renderAttendance() {
+            const today = new Date().toISOString().split('T')[0];
+            let content = `<div class="flex flex-wrap items-center mb-6 gap-4">
+                <div>
+                    <label for="attendance-date" class="mr-2 font-semibold text-slate-700">Date:</label>
+                    <input type="date" id="attendance-date" value="${today}" class="p-2 border rounded-md">
+                </div>
+                <div>
+                    <label for="attendance-course-select" class="mr-2 font-semibold text-slate-700">Course:</label>
+                    <select id="attendance-course-select" class="p-2 border rounded-md">
+                        <option value="">-- Choose a course --</option>
+                        ${state.courses.map(c => `<option value="${c.id}">${c.name}</option>`).join('')}
+                    </select>
+                </div>
+            </div>
+            <div id="attendance-sheet"></div>`;
+            document.getElementById('content').innerHTML = content;
+            
+            const updateSheet = () => {
+                const date = document.getElementById('attendance-date').value;
+                const courseId = document.getElementById('attendance-course-select').value;
+                displayAttendanceSheet(date, courseId);
+            };
+
+            document.getElementById('attendance-date').addEventListener('change', updateSheet);
+            document.getElementById('attendance-course-select').addEventListener('change', updateSheet);
+        }
+
+        function renderReports() {
+             document.getElementById('content').innerHTML = `
+                <h3 class="text-2xl font-bold text-slate-700 mb-6">Report Generator</h3>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div class="bg-slate-50 p-6 rounded-lg border">
+                        <h4 class="text-lg font-bold text-slate-800 mb-2">Student Progress Report</h4>
+                        <p class="text-slate-600 mb-4">Generate a detailed PDF report for a single student, including all grades and attendance records.</p>
+                        <button onclick="openStudentReportModal()" class="bg-indigo-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-indigo-700 transition-colors">Generate Report</button>
+                    </div>
+                    <div class="bg-slate-50 p-6 rounded-lg border">
+                        <h4 class="text-lg font-bold text-slate-800 mb-2">Class Roster</h4>
+                        <p class="text-slate-600 mb-4">Generate a PDF list of all students enrolled in a specific course.</p>
+                        <button onclick="openClassRosterModal()" class="bg-indigo-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-indigo-700 transition-colors">Generate Roster</button>
+                    </div>
+                </div>
+            `;
+        }
+        
+        // --- ROUTING & NAVIGATION ---
+        function populateNav() {
+            const navEl = document.getElementById('nav');
+            if (!state.user || !state.user.role) {
+                navEl.innerHTML = ''; return;
+            }
+            const allowedLinks = rolesConfig[state.user.role] || [];
+            navEl.innerHTML = allowedLinks.map(linkKey => {
+                const link = allNavLinks[linkKey];
+                return `<a href="${link.href}" class="nav-link flex items-center p-3 my-1 rounded-lg text-slate-300 hover:bg-sky-500 hover:text-white transition-colors duration-200">
+                           ${link.icon} ${link.text}
+                        </a>`;
+            }).join('');
+        }
+
+        const routes = {
+            '#dashboard': renderDashboard,
+            '#students': renderStudents,
+            '#courses': renderCourses,
+            '#gradebook': renderGradebook,
+            '#attendance': renderAttendance,
+            '#reports': renderReports,
+        };
+
+        function router() {
+            const path = window.location.hash || '#dashboard';
+            // Only render if the user's role allows access
+            const allowedLinks = rolesConfig[state.user?.role] || [];
+            const pageKey = path.substring(1);
+
+            if (!allowedLinks.includes(pageKey)) {
+                window.location.hash = '#dashboard'; // Redirect to dashboard
+                return;
+            }
+            
+            const renderFunction = routes[path];
+            
+            if (renderFunction) {
+                document.getElementById('page-title').textContent = allNavLinks[pageKey]?.text || 'Dashboard';
+                // Highlight active link
+                document.querySelectorAll('.nav-link').forEach(link => {
+                    link.classList.toggle('active', link.getAttribute('href') === path);
+                });
+                renderFunction();
+            } else {
+                renderDashboard(); // Fallback
+            }
+        }
+        
+        window.addEventListener('hashchange', router);
+        window.addEventListener('load', () => { /* onAuthStateChanged handles initial load */ });
+        
+        document.getElementById('sidebar-toggle').addEventListener('click', () => {
+            document.getElementById('sidebar').classList.toggle('open');
+        });
+
+        // --- All other functions (CRUD, Modals, etc.) are exposed to window for inline event handlers ---
+        
+        // STUDENT CRUD
+        window.openStudentModal = (studentId = null) => {
+            const student = studentId ? state.students.find(s => s.id === studentId) : null;
+            const title = student ? 'Edit Student' : 'Add New Student';
+            const body = `<form id="student-form" onsubmit="handleStudentFormSubmit(event, '${studentId || ''}')">
+                <input type="text" id="student-name" placeholder="Full Name" required value="${student?.name || ''}" class="w-full p-2 border rounded mb-4">
+                <input type="email" id="student-email" placeholder="Email Address" required value="${student?.email || ''}" class="w-full p-2 border rounded mb-4">
+                <input type="number" id="student-grade" placeholder="Grade Level (e.g., 9)" required value="${student?.gradeLevel || ''}" class="w-full p-2 border rounded mb-6">
+                <button type="submit" class="w-full bg-green-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-green-700">Save Student</button>
+            </form>`;
+            openModal(title, body);
+        };
+        
+        window.handleStudentFormSubmit = async (event, studentId) => {
+            event.preventDefault();
+            const studentData = {
+                name: document.getElementById('student-name').value,
+                email: document.getElementById('student-email').value,
+                gradeLevel: document.getElementById('student-grade').value,
+            };
+            try {
+                if (studentId) {
+                    await updateDoc(doc(db, dbPaths.students, studentId), studentData);
+                } else {
+                    await addDoc(collection(db, dbPaths.students), studentData);
+                }
+                closeModal();
+            } catch (error) {
+                console.error("Error saving student:", error);
+            }
+        };
+
+        window.deleteStudent = async (studentId) => {
+            if (confirm('Are you sure you want to delete this student? This will also remove all associated grades and attendance records.')) {
+                try {
+                    const batch = writeBatch(db);
+                    // Delete student doc
+                    batch.delete(doc(db, dbPaths.students, studentId));
+                    // Query and delete associated grades
+                    const gradesQuery = query(collection(db, dbPaths.grades), where("studentId", "==", studentId));
+                    const gradesSnapshot = await getDocs(gradesQuery);
+                    gradesSnapshot.forEach(doc => batch.delete(doc.ref));
+                    // Query and delete associated attendance
+                    const attendanceQuery = query(collection(db, dbPaths.attendance), where("studentId", "==", studentId));
+                    const attendanceSnapshot = await getDocs(attendanceQuery);
+                    attendanceSnapshot.forEach(doc => batch.delete(doc.ref));
+                    
+                    await batch.commit();
+                } catch (error) {
+                    console.error("Error deleting student and related data:", error);
+                }
+            }
+        };
+
+        // COURSE CRUD
+        window.openCourseModal = (courseId = null) => {
+            const course = courseId ? state.courses.find(c => c.id === courseId) : null;
+            const title = course ? 'Edit Course' : 'Add New Course';
+            const body = `<form id="course-form" onsubmit="handleCourseFormSubmit(event, '${courseId || ''}')">
+                <input type="text" id="course-name" placeholder="Course Name" required value="${course?.name || ''}" class="w-full p-2 border rounded mb-4">
+                <input type="text" id="course-teacher" placeholder="Teacher Name" required value="${course?.teacher || ''}" class="w-full p-2 border rounded mb-6">
+                <button type="submit" class="w-full bg-green-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-green-700">Save Course</button>
+            </form>`;
+            openModal(title, body);
+        };
+
+        window.handleCourseFormSubmit = async (event, courseId) => {
+            event.preventDefault();
+            const courseData = {
+                name: document.getElementById('course-name').value,
+                teacher: document.getElementById('course-teacher').value,
+            };
+            try {
+                if (courseId) {
+                    await updateDoc(doc(db, dbPaths.courses, courseId), courseData);
+                } else {
+                    await addDoc(collection(db, dbPaths.courses), courseData);
+                }
+                closeModal();
+            } catch (error) {
+                console.error("Error saving course:", error);
+            }
+        };
+
+        window.deleteCourse = async (courseId) => {
+            if (confirm('Are you sure you want to delete this course?')) {
+                try {
+                    await deleteDoc(doc(db, dbPaths.courses, courseId));
+                } catch (error) {
+                    console.error("Error deleting course:", error);
+                }
+            }
+        };
+
+        // GRADEBOOK LOGIC
+        window.displayGradebookForCourse = (courseId) => {
+            const container = document.getElementById('gradebook-table');
+            if (!courseId) {
+                container.innerHTML = `<p class="text-slate-500">Please select a course to view the gradebook.</p>`;
+                return;
+            }
+            const gradesForCourse = state.grades.filter(g => g.courseId === courseId);
+            let table = `<div class="overflow-x-auto"><table class="w-full text-left">
+                <thead><tr class="bg-slate-100 text-slate-600 uppercase text-sm">
+                    <th class="py-3 px-4">Student</th><th class="py-3 px-4">Assignment 1</th><th class="py-3 px-4">Final Score</th>
+                </tr></thead><tbody>`;
+            
+            state.students.forEach(student => {
+                const grade = gradesForCourse.find(g => g.studentId === student.id);
+                table += `<tr class="border-b border-slate-200 hover:bg-slate-50">
+                    <td class="py-3 px-4 font-medium">${student.name}</td>
+                    <td class="py-3 px-4">
+                        <input type="number" value="${grade?.score || ''}" onchange="updateGrade('${student.id}', '${courseId}', this.value)" class="w-20 p-1 border rounded" placeholder="--" ${state.user.role === 'student' ? 'disabled' : ''}>
+                    </td>
+                    <td class="py-3 px-4 font-bold">${grade?.score || 'N/A'}%</td>
+                </tr>`;
+            });
+            table += `</tbody></table></div>`;
+            container.innerHTML = table;
+        };
+
+        window.updateGrade = async (studentId, courseId, newScore) => {
+            const score = parseFloat(newScore);
+            if (isNaN(score) || score < 0 || score > 100) {
+                alert("Please enter a valid score between 0 and 100.");
+                router(); // Re-render to reset invalid input
+                return;
+            }
+            try {
+                const existingGrade = state.grades.find(g => g.studentId === studentId && g.courseId === courseId);
+                if (existingGrade) {
+                    await updateDoc(doc(db, dbPaths.grades, existingGrade.id), { score });
+                } else {
+                    await addDoc(collection(db, dbPaths.grades), { studentId, courseId, score });
+                }
+            } catch(e) { console.error("Error updating grade: ", e); }
+        };
+
+        // ATTENDANCE LOGIC
+        window.displayAttendanceSheet = (date, courseId) => {
+            const container = document.getElementById('attendance-sheet');
+            if (!date || !courseId) {
+                container.innerHTML = `<p class="text-slate-500">Please select a date and course to take attendance.</p>`;
+                return;
+            }
+            const attendanceForDay = state.attendance.filter(a => a.date === date && a.courseId === courseId);
+            let sheet = `<form onsubmit="saveAttendance(event, '${date}', '${courseId}')">
+                <div class="overflow-x-auto"><table class="w-full text-left">
+                <thead><tr class="bg-slate-100 text-slate-600 uppercase text-sm">
+                    <th class="py-3 px-4">Student</th><th class="py-3 px-4 text-center">Present</th><th class="py-3 px-4 text-center">Absent</th><th class="py-3 px-4 text-center">Late</th>
+                </tr></thead><tbody>`;
+
+            state.students.forEach(student => {
+                const record = attendanceForDay.find(a => a.studentId === student.id);
+                sheet += `<tr class="border-b border-slate-200">
+                    <td class="py-3 px-4 font-medium">${student.name}</td>
+                    <td class="py-3 px-4 text-center"><input type="radio" name="att_${student.id}" value="present" ${record?.status === 'present' ? 'checked' : ''} required></td>
+                    <td class="py-3 px-4 text-center"><input type="radio" name="att_${student.id}" value="absent" ${record?.status === 'absent' ? 'checked' : ''}></td>
+                    <td class="py-3 px-4 text-center"><input type="radio" name="att_${student.id}" value="late" ${record?.status === 'late' ? 'checked' : ''}></td>
+                </tr>`;
+            });
+            sheet += `</tbody></table></div>
+                <button type="submit" class="mt-6 bg-green-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-green-700">Save Attendance</button>
+            </form>`;
+            container.innerHTML = sheet;
+        };
+        
+        window.saveAttendance = async (event, date, courseId) => {
+            event.preventDefault();
+            const formData = new FormData(event.target);
+            const batch = writeBatch(db);
+
+            for (let [key, status] of formData.entries()) {
+                const studentId = key.split('_')[1];
+                const existingRecord = state.attendance.find(a => a.date === date && a.courseId === courseId && a.studentId === studentId);
+                const data = { studentId, courseId, date, status };
+
+                if (existingRecord) {
+                    batch.update(doc(db, dbPaths.attendance, existingRecord.id), data);
+                } else {
+                    batch.set(doc(collection(db, dbPaths.attendance)), data);
+                }
+            }
+            try {
+                await batch.commit();
+                alert('Attendance saved successfully!');
+            } catch (error) {
+                console.error("Error saving attendance:", error);
+                alert('Failed to save attendance.');
+            }
+        };
+
+        // REPORTING LOGIC
+        window.openStudentReportModal = () => {
+            const body = `<label for="report-student-select" class="block mb-2">Select Student:</label>
+            <select id="report-student-select" class="w-full p-2 border rounded mb-4">
+                ${state.students.map(s => `<option value="${s.id}">${s.name}</option>`).join('')}
+            </select>
+            <button onclick="generateStudentReport()" class="w-full bg-blue-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-blue-700">Generate PDF</button>`;
+            openModal('Generate Student Report', body);
+        };
+
+        window.generateStudentReport = () => {
+            const studentId = document.getElementById('report-student-select').value;
+            const student = state.students.find(s => s.id === studentId);
+            if (!student) return;
+
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF();
+
+            doc.setFontSize(22);
+            doc.text("Student Progress Report", 14, 20);
+            doc.setFontSize(16);
+            doc.text(student.name, 14, 30);
+            doc.setFontSize(12);
+            doc.text(`Grade Level: ${student.gradeLevel}`, 14, 36);
+
+            // Grades Table
+            const studentGrades = state.grades.filter(g => g.studentId === studentId);
+            const gradeBody = studentGrades.map(g => {
+                const course = state.courses.find(c => c.id === g.courseId);
+                return [course?.name || 'Unknown Course', `${g.score}%`, getLetterGrade(g.score)];
+            });
+            doc.autoTable({
+                head: [['Course', 'Score', 'Letter Grade']],
+                body: gradeBody,
+                startY: 45,
+                headStyles: { fillColor: [41, 128, 185] },
+            });
+
+            // Attendance Summary
+            const studentAttendance = state.attendance.filter(a => a.studentId === studentId);
+            const present = studentAttendance.filter(a => a.status === 'present').length;
+            const absent = studentAttendance.filter(a => a.status === 'absent').length;
+            const late = studentAttendance.filter(a => a.status === 'late').length;
+            doc.text(`Attendance Summary: ${present} Present, ${absent} Absent, ${late} Late`, 14, doc.autoTable.previous.finalY + 10);
+            
+            doc.save(`${student.name}_progress_report.pdf`);
+            closeModal();
+        };
+
+        window.openClassRosterModal = () => {
+            const body = `<label for="report-course-select" class="block mb-2">Select Course:</label>
+            <select id="report-course-select" class="w-full p-2 border rounded mb-4">
+                ${state.courses.map(c => `<option value="${c.id}">${c.name}</option>`).join('')}
+            </select>
+            <button onclick="generateClassRoster()" class="w-full bg-blue-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-blue-700">Generate PDF</button>`;
+            openModal('Generate Class Roster', body);
+        };
+        
+        window.generateClassRoster = () => {
+            const courseId = document.getElementById('report-course-select').value;
+            const course = state.courses.find(c => c.id === courseId);
+            if (!course) return;
+
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF();
+            
+            doc.setFontSize(22);
+            doc.text(`Class Roster: ${course.name}`, 14, 20);
+            doc.setFontSize(12);
+            doc.text(`Teacher: ${course.teacher}`, 14, 28);
+            
+            const rosterBody = state.students.map(s => [s.name, s.email, s.gradeLevel]);
+            doc.autoTable({
+                head: [['Student Name', 'Email', 'Grade Level']],
+                body: rosterBody,
+                startY: 35,
+                headStyles: { fillColor: [41, 128, 185] },
+            });
+
+            doc.save(`${course.name}_roster.pdf`);
+            closeModal();
+        };
+
+    </script>
+</body>
+</html>
+
