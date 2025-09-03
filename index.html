@@ -207,23 +207,28 @@
                     let userDoc = await getDoc(userRef);
                     const isAdminEmail = user.email === 'peter.massaua@gmail.com';
 
+                    let userProfile;
+
                     if (!userDoc.exists()) {
                         const isAnonymous = user.isAnonymous;
-                        const newUserProfile = {
+                        userProfile = {
                             uid: user.uid,
                             email: isAnonymous ? `anonymous_${user.uid.substring(0,5)}@schoolyard.com` : user.email,
                             displayName: isAnonymous ? 'Anonymous User' : user.displayName,
                             role: isAdminEmail ? 'admin' : 'student',
                         };
-                        await setDoc(userRef, newUserProfile);
-                        userDoc = await getDoc(userRef);
-                    } else if (isAdminEmail && userDoc.data().role !== 'admin') {
-                        // If user exists and should be an admin, update their role.
-                        await updateDoc(userRef, { role: 'admin' });
-                        userDoc = await getDoc(userRef); // Re-fetch to get updated data
+                        await setDoc(userRef, userProfile);
+                    } else {
+                        userProfile = userDoc.data();
+                        if (isAdminEmail && userProfile.role !== 'admin') {
+                            // Update the local object immediately for a seamless UI transition
+                            userProfile.role = 'admin';
+                            // Then, update the database in the background
+                            await updateDoc(userRef, { role: 'admin' });
+                        }
                     }
                     
-                    state.user = userDoc.data();
+                    state.user = userProfile;
                     
                     // Show app and a loading message
                     document.getElementById('auth-container').classList.add('hidden');
@@ -846,4 +851,5 @@
     </script>
 </body>
 </html>
+
 
