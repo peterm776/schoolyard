@@ -207,6 +207,7 @@
         };
         
         let activeChart = null; // To hold the chart instance
+        let routerDebounceTimer; // Timer for debouncing router calls
 
         // --- AUTHENTICATION ---
 
@@ -273,7 +274,7 @@
                     
                     // Finally, populate navigation and render the initial page with all data present
                     populateNav();
-                    router();
+                    router(); // Initial render
                 } catch (error) {
                     console.error("Error during login sequence:", error);
                     document.getElementById('content').innerHTML = `<div class="text-center text-red-500 font-semibold p-8">Could not load application data. Please refresh the page.</div>`;
@@ -307,7 +308,7 @@
                 const q = query(collection(db, path));
                 const unsubscribe = onSnapshot(q, (snapshot) => {
                     state[stateKey] = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                    router(); 
+                    debouncedRouter(); // Use debounced router for updates
                 }, (error) => console.error(`Error listening to ${stateKey}:`, error));
                 state.unsubscribeListeners.push(unsubscribe);
             };
@@ -611,6 +612,11 @@
             '#reports': renderReports,
             '#profile': renderProfile,
         };
+
+        function debouncedRouter() {
+            clearTimeout(routerDebounceTimer);
+            routerDebounceTimer = setTimeout(router, 50); // Consolidate renders within 50ms
+        }
 
         function router() {
             const path = window.location.hash || '#dashboard';
@@ -953,4 +959,5 @@
     </script>
 </body>
 </html>
+
 
