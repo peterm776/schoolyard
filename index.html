@@ -139,17 +139,17 @@
     <script type="module">
         // Firebase Imports
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithRedirect, getRedirectResult, signOut, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithRedirect, getRedirectResult, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, collection, doc, getDoc, setDoc, onSnapshot, addDoc, updateDoc, deleteDoc, query, where, writeBatch, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         // --- FIREBASE CONFIG & INITIALIZATION ---
         const firebaseConfig = {
-          apiKey: "AIzaSyDmz8vvvAdytc_0p3gJMYJ4VsPMtvuL4N4",
-          authDomain: "schoolyard-c4660.firebaseapp.com",
-          projectId: "schoolyard-c4660",
-          storageBucket: "schoolyard-c4660.appspot.com",
-          messagingSenderId: "103489319452",
-          appId: "1:103489319452:web:4683ed351d8313eae165d9"
+            apiKey: "AIzaSyDmz8vvvAdytc_0p3gJMYJ4VsPMtvuL4N4",
+            authDomain: "schoolyard-c4660.firebaseapp.com",
+            projectId: "schoolyard-c4660",
+            storageBucket: "schoolyard-c4660.appspot.com",
+            messagingSenderId: "103489319452",
+            appId: "1:103489319452:web:4683ed351d8313eae165d9"
         };
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
@@ -202,7 +202,7 @@
         const rolesConfig = {
             admin: ['dashboard', 'students', 'courses', 'gradebook', 'attendance', 'financials', 'calendar', 'messages', 'library', 'reports', 'profile'],
             teacher: ['dashboard', 'courses', 'gradebook', 'attendance', 'calendar', 'messages', 'library', 'profile'],
-            student: ['dashboard', 'gradebook', 'attendance', 'calendar', 'messages', 'library', 'profile'],
+            student: ['dashboard', 'gradebook', 'attendance', 'financials', 'calendar', 'messages', 'library', 'profile'],
             parent: ['dashboard', 'gradebook', 'attendance', 'financials', 'calendar', 'messages', 'profile'],
         };
         
@@ -211,92 +211,101 @@
         let appInitialized = false; // Initialization guard flag
 
         // --- AUTHENTICATION ---
+        async function handleAuthentication() {
+            try {
+                // First, check for a redirect result. This doesn't throw if there's no redirect.
+                const result = await getRedirectResult(auth);
+                if (result && result.user) {
+                    // If we get a user from the redirect, we can proceed with initialization.
+                    // onAuthStateChanged will also fire with this user, but we can start early.
+                    initializeAppUI(result.user);
+                    return; 
+                }
 
-        // Handle the result of a redirect authentication
-        getRedirectResult(auth)
-            .catch((error) => {
-                console.error("Redirect Result Error:", error);
+                // If no redirect result, check the current auth state.
+                onAuthStateChanged(auth, (user) => {
+                    if (user && !appInitialized) {
+                        initializeAppUI(user);
+                    } else if (!user) {
+                        // This block now only runs if there's definitively no user.
+                        document.getElementById('auth-message').textContent = 'Please sign in to continue.';
+                        document.getElementById('login-button').classList.remove('hidden');
+                        state.user = null;
+                        document.getElementById('auth-container').classList.remove('hidden');
+                        document.getElementById('app-container').classList.add('hidden');
+                        state.unsubscribeListeners.forEach(unsub => unsub());
+                        state.unsubscribeListeners = [];
+                        document.getElementById('content').innerHTML = '';
+                        appInitialized = false;
+                    }
+                });
+
+            } catch (error) {
+                console.error("Authentication Error:", error);
                 const authMessage = document.getElementById('auth-message');
                 authMessage.innerHTML = `
                     <p class="text-red-600 font-bold text-center">Login Failed!</p>
                     <p class="mt-2 text-sm text-slate-600">Could not complete sign-in. Please try again.</p>
                 `;
                 document.getElementById('login-button').classList.remove('hidden');
-            });
-
-        onAuthStateChanged(auth, async (user) => {
-            if (user && !appInitialized) {
-                appInitialized = true; // Set the guard flag to prevent re-initialization
-                try {
-                    const userRef = doc(db, dbPaths.users, user.uid);
-                    let userDoc = await getDoc(userRef);
-                    const isAdminEmail = user.email === 'peter.massaua@gmail.com';
-
-                    let userProfile;
-
-                    if (!userDoc.exists()) {
-                        const isAnonymous = user.isAnonymous;
-                        userProfile = {
-                            uid: user.uid,
-                            email: isAnonymous ? `anonymous_${user.uid.substring(0,5)}@schoolyard.com` : user.email,
-                            displayName: isAnonymous ? 'Anonymous User' : user.displayName,
-                            role: isAdminEmail ? 'admin' : 'student',
-                            address: '',
-                            phone: '',
-                            emergencyContact: ''
-                        };
-                        await setDoc(userRef, userProfile);
-                    } else {
-                        userProfile = userDoc.data();
-                        if (isAdminEmail && userProfile.role !== 'admin') {
-                            // Update the local object immediately for a seamless UI transition
-                            userProfile.role = 'admin';
-                            // Then, update the database in the background
-                            await updateDoc(userRef, { role: 'admin' });
-                        }
-                    }
-                    
-                    state.user = userProfile;
-                    
-                    // Show app and a loading message
-                    document.getElementById('auth-container').classList.add('hidden');
-                    document.getElementById('app-container').classList.remove('hidden');
-                    document.getElementById('content').innerHTML = `<div class="text-center text-slate-500 font-semibold p-8">Loading school data...</div>`;
-
-                    document.getElementById('user-info').innerHTML = `
-                        <p class="font-semibold text-slate-800">${state.user.displayName}</p>
-                        <p class="text-xs text-slate-500 capitalize">${state.user.role}</p>
-                    `;
-                    
-                    // First, load all initial data to prevent race conditions
-                    await loadInitialData();
-
-                    // Then, set up listeners for real-time updates
-                    setupRealtimeListeners();
-                    
-                    // Finally, populate navigation and render the initial page with all data present
-                    populateNav();
-                    router(); // Initial render
-                } catch (error) {
-                    console.error("Error during login sequence:", error);
-                    document.getElementById('content').innerHTML = `<div class="text-center text-red-500 font-semibold p-8">Could not load application data. Please refresh the page.</div>`;
-                }
-            } else {
-                document.getElementById('auth-message').textContent = 'Please sign in to continue.';
-                document.getElementById('login-button').classList.remove('hidden');
-                state.user = null;
-                document.getElementById('auth-container').classList.remove('hidden');
-                document.getElementById('app-container').classList.add('hidden');
-                state.unsubscribeListeners.forEach(unsub => unsub());
-                state.unsubscribeListeners = [];
-                document.getElementById('content').innerHTML = '';
-                appInitialized = false; // Reset the guard flag on logout
             }
-        });
+        }
+
+        async function initializeAppUI(user) {
+            if (appInitialized) return; // Prevent re-initialization
+            appInitialized = true;
+
+            try {
+                const userRef = doc(db, dbPaths.users, user.uid);
+                let userDoc = await getDoc(userRef);
+                const isAdminEmail = user.email === 'peter.massaua@gmail.com';
+                let userProfile;
+
+                if (!userDoc.exists()) {
+                    userProfile = {
+                        uid: user.uid,
+                        email: user.email,
+                        displayName: user.displayName,
+                        role: isAdminEmail ? 'admin' : 'student', // Default role
+                        address: '',
+                        phone: '',
+                        emergencyContact: ''
+                    };
+                    await setDoc(userRef, userProfile);
+                } else {
+                    userProfile = userDoc.data();
+                    if (isAdminEmail && userProfile.role !== 'admin') {
+                        userProfile.role = 'admin';
+                        await updateDoc(userRef, { role: 'admin' });
+                    }
+                }
+                
+                state.user = userProfile;
+                
+                document.getElementById('auth-container').classList.add('hidden');
+                document.getElementById('app-container').classList.remove('hidden');
+                document.getElementById('content').innerHTML = `<div class="text-center text-slate-500 font-semibold p-8">Loading school data...</div>`;
+
+                document.getElementById('user-info').innerHTML = `
+                    <p class="font-semibold text-slate-800">${state.user.displayName}</p>
+                    <p class="text-xs text-slate-500 capitalize">${state.user.role}</p>
+                `;
+                
+                await loadInitialData();
+                setupRealtimeListeners();
+                populateNav();
+                router(); 
+            } catch (error) {
+                console.error("Error during app initialization:", error);
+                document.getElementById('content').innerHTML = `<div class="text-center text-red-500 font-semibold p-8">Could not load application data. Please refresh the page.</div>`;
+            }
+        }
+        
+        handleAuthentication();
+
 
         document.getElementById('login-button').addEventListener('click', () => {
             const provider = new GoogleAuthProvider();
-            // Use signInWithRedirect instead of signInWithPopup
             signInWithRedirect(auth, provider);
         });
 
@@ -346,7 +355,6 @@
             } catch (error) {
                 console.error("Error loading initial data:", error);
                 document.getElementById('content').innerHTML = `<p class="text-red-500">Error loading school data. Please refresh.</p>`;
-                // re-throw to be caught by onAuthStateChanged
                 throw error;
             }
         }
@@ -374,13 +382,11 @@
             toast.textContent = message;
             container.appendChild(toast);
 
-            // Animate in
             setTimeout(() => {
                 toast.classList.remove('opacity-0', 'translate-y-2');
                 toast.classList.add('opacity-100', 'translate-y-0');
             }, 100);
 
-            // Animate out and remove
             setTimeout(() => {
                 toast.classList.add('opacity-0', 'translate-y-2');
                 toast.addEventListener('transitionend', () => toast.remove());
@@ -409,10 +415,8 @@
         }
         
         // --- RENDER FUNCTIONS ---
-        // Defined before 'routes' object to avoid ReferenceError
         
         function renderDashboard() {
-            // ... (Implementation will be role-specific)
             const content = document.getElementById('content');
              if(activeChart) {
                 activeChart.destroy();
@@ -454,8 +458,7 @@
         }
 
         function renderStudents() {
-            // ... (Implementation remains similar but may add parent linking)
-             const isAdmin = state.user.role === 'admin';
+            const isAdmin = state.user.role === 'admin';
             let content = `<div class="flex justify-between items-center mb-6">
                 <h3 class="text-2xl font-bold text-slate-700">Student Roster</h3>
                 ${isAdmin ? `<button onclick="openStudentModal()" class="bg-sky-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-sky-700 transition-colors">+ Add Student</button>` : ''}
@@ -553,19 +556,162 @@
         }
         
         function renderFinancials() {
-            document.getElementById('content').innerHTML = `<h3 class="text-2xl font-bold">Financials</h3><p>Coming Soon...</p>`;
+            const isAdmin = state.user.role === 'admin';
+            let totalBalance = 0;
+            let content = `<div class="flex justify-between items-center mb-6">
+                <h3 class="text-2xl font-bold text-slate-700">Financials</h3>
+                ${isAdmin ? `<button onclick="openTransactionModal()" class="bg-sky-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-sky-700 transition-colors">+ Add Transaction</button>` : ''}
+            </div>`;
+            
+            if (isAdmin) {
+                // Admin view: Show all transactions
+                content += `<div class="overflow-x-auto"><table class="w-full text-left">
+                <thead><tr class="bg-slate-100 text-slate-600 uppercase text-sm">
+                    <th class="py-3 px-4">Date</th><th class="py-3 px-4">Student</th><th class="py-3 px-4">Description</th><th class="py-3 px-4 text-right">Amount</th>
+                </tr></thead><tbody>`;
+                state.transactions.forEach(t => {
+                    const student = state.students.find(s => s.id === t.studentId);
+                    const amountClass = t.type === 'payment' ? 'text-green-600' : 'text-red-600';
+                    const amountPrefix = t.type === 'payment' ? '-$' : '+$';
+                    content += `<tr class="border-b border-slate-200 hover:bg-slate-50">
+                        <td class="py-3 px-4 text-slate-600">${t.date}</td>
+                        <td class="py-3 px-4 font-medium">${student?.name || 'N/A'}</td>
+                        <td class="py-3 px-4 text-slate-800">${t.description}</td>
+                        <td class="py-3 px-4 text-right font-semibold ${amountClass}">${amountPrefix}${Number(t.amount).toFixed(2)}</td>
+                    </tr>`;
+                });
+                content += `</tbody></table></div>`;
+            } else {
+                // Student/Parent view
+                const studentUser = state.students.find(s => s.email === state.user.email);
+                if (studentUser) {
+                    const studentTransactions = state.transactions.filter(t => t.studentId === studentUser.id);
+                    studentTransactions.forEach(t => {
+                        totalBalance += (t.type === 'fee' ? 1 : -1) * parseFloat(t.amount);
+                    });
+                    
+                    content += `<div class="mb-6 bg-blue-100 p-4 rounded-lg">
+                        <h4 class="text-lg font-bold text-blue-800">Account Summary</h4>
+                        <p class="text-2xl font-bold text-blue-900">Current Balance: $${totalBalance.toFixed(2)}</p>
+                    </div>`;
+
+                    content += `<div class="overflow-x-auto"><table class="w-full text-left">
+                    <thead><tr class="bg-slate-100 text-slate-600 uppercase text-sm">
+                        <th class="py-3 px-4">Date</th><th class="py-3 px-4">Description</th><th class="py-3 px-4 text-right">Charge</th><th class="py-3 px-4 text-right">Payment</th>
+                    </tr></thead><tbody>`;
+
+                    studentTransactions.forEach(t => {
+                        content += `<tr class="border-b border-slate-200 hover:bg-slate-50">
+                            <td class="py-3 px-4 text-slate-600">${t.date}</td>
+                            <td class="py-3 px-4 font-medium">${t.description}</td>
+                            <td class="py-3 px-4 text-right text-red-600">${t.type === 'fee' ? `$${Number(t.amount).toFixed(2)}` : '-'}</td>
+                            <td class="py-3 px-4 text-right text-green-600">${t.type === 'payment' ? `$${Number(t.amount).toFixed(2)}` : '-'}</td>
+                        </tr>`;
+                    });
+                    content += `</tbody></table></div>`;
+                } else {
+                    content += `<p class="text-slate-500">No financial records found for your account.</p>`;
+                }
+            }
+            
+            document.getElementById('content').innerHTML = content;
         }
+
         function renderCalendar() {
-            document.getElementById('content').innerHTML = `<h3 class="text-2xl font-bold">Calendar</h3><p>Coming Soon...</p>`;
+            const isAdmin = state.user.role === 'admin';
+            let content = `<div class="flex justify-between items-center mb-6">
+                <h3 class="text-2xl font-bold text-slate-700">School Calendar</h3>
+                ${isAdmin ? `<button onclick="openEventModal()" class="bg-sky-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-sky-700 transition-colors">+ Add Event</button>` : ''}
+            </div>
+            <div class="space-y-4">`;
+
+            if (state.events.length === 0) {
+                 content += `<p class="text-slate-500">No upcoming events.</p>`;
+            } else {
+                state.events.sort((a, b) => new Date(a.date) - new Date(b.date)).forEach(event => {
+                    content += `<div class="p-4 bg-slate-50 border border-slate-200 rounded-lg">
+                        <p class="font-bold text-lg text-indigo-700">${event.title}</p>
+                        <p class="text-slate-600 font-medium">${new Date(event.date + 'T00:00:00').toDateString()}</p>
+                        <p class="text-slate-800 mt-2">${event.description}</p>
+                        ${isAdmin ? `<div class="text-right mt-2">
+                             <button onclick="deleteEvent('${event.id}')" class="text-red-600 hover:text-red-800 font-semibold text-sm">Delete</button>
+                        </div>` : ''}
+                    </div>`;
+                });
+            }
+            
+            content += `</div>`;
+            document.getElementById('content').innerHTML = content;
         }
+
         function renderMessages() {
-            document.getElementById('content').innerHTML = `<h3 class="text-2xl font-bold">Messages</h3><p>Coming Soon...</p>`;
+            document.getElementById('content').innerHTML = `<h3 class="text-2xl font-bold">Messages</h3><p>This feature is coming soon.</p>`;
         }
+
         function renderLibrary() {
-            document.getElementById('content').innerHTML = `<h3 class="text-2xl font-bold">Library</h3><p>Coming Soon...</p>`;
+            const isAdmin = state.user.role === 'admin';
+            let content = `<div class="flex justify-between items-center mb-6">
+                <h3 class="text-2xl font-bold text-slate-700">Library Catalog</h3>
+                ${isAdmin ? `<div>
+                    <button onclick="openBookModal()" class="bg-sky-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-sky-700 transition-colors mr-2">+ Add Book</button>
+                    <button onclick="openCheckoutModal()" class="bg-green-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-green-700 transition-colors">Checkout Book</button>
+                </div>` : ''}
+            </div>
+            <div class="overflow-x-auto"><table class="w-full text-left">
+                <thead><tr class="bg-slate-100 text-slate-600 uppercase text-sm">
+                    <th class="py-3 px-4">Title</th><th class="py-3 px-4">Author</th><th class="py-3 px-4">ISBN</th><th class="py-3 px-4">Available</th>
+                    ${isAdmin ? `<th class="py-3 px-4 text-right">Actions</th>` : ''}
+                </tr></thead><tbody>`;
+
+            state.books.forEach(book => {
+                const checkedOutCount = state.checkouts.filter(c => c.bookId === book.id && !c.returnDate).length;
+                const available = book.totalCopies - checkedOutCount;
+                content += `<tr class="border-b border-slate-200 hover:bg-slate-50">
+                    <td class="py-3 px-4 font-medium">${book.title}</td>
+                    <td class="py-3 px-4 text-slate-600">${book.author}</td>
+                    <td class="py-3 px-4 text-slate-600">${book.isbn}</td>
+                    <td class="py-3 px-4 font-bold ${available > 0 ? 'text-green-600' : 'text-red-600'}">${available} / ${book.totalCopies}</td>
+                    ${isAdmin ? `<td class="py-3 px-4 text-right">
+                        <button onclick="openBookModal('${book.id}')" class="text-indigo-600 hover:text-indigo-800 font-semibold mr-4">Edit</button>
+                        <button onclick="deleteBook('${book.id}')" class="text-red-600 hover:text-red-800 font-semibold">Delete</button>
+                    </td>` : ''}
+                </tr>`;
+            });
+
+            content += `</tbody></table></div>`;
+            document.getElementById('content').innerHTML = content;
         }
+        
         function renderProfile() {
-            document.getElementById('content').innerHTML = `<h3 class="text-2xl font-bold">Profile</h3><p>Coming Soon...</p>`;
+            const user = state.user;
+            document.getElementById('content').innerHTML = `
+                <h3 class="text-2xl font-bold text-slate-700 mb-6">Your Profile</h3>
+                <div class="bg-slate-50 p-6 rounded-lg border max-w-2xl">
+                    <form id="profile-form" onsubmit="handleProfileUpdate(event)">
+                        <div class="mb-4">
+                            <label class="block text-slate-700 font-bold mb-2">Display Name</label>
+                            <input type="text" id="profile-name" value="${user.displayName || ''}" class="w-full p-2 border rounded bg-slate-200" readonly>
+                        </div>
+                         <div class="mb-4">
+                            <label class="block text-slate-700 font-bold mb-2">Email</label>
+                            <input type="email" value="${user.email || ''}" class="w-full p-2 border rounded bg-slate-200" readonly>
+                        </div>
+                         <div class="mb-4">
+                            <label class="block text-slate-700 font-bold mb-2">Role</label>
+                            <input type="text" value="${user.role || ''}" class="w-full p-2 border rounded bg-slate-200 capitalize" readonly>
+                        </div>
+                        <div class="mb-4">
+                            <label class="block text-slate-700 font-bold mb-2" for="profile-phone">Phone Number</label>
+                            <input type="tel" id="profile-phone" value="${user.phone || ''}" class="w-full p-2 border rounded" placeholder="Your contact number">
+                        </div>
+                        <div class="mb-4">
+                            <label class="block text-slate-700 font-bold mb-2" for="profile-address">Address</label>
+                            <textarea id="profile-address" class="w-full p-2 border rounded" placeholder="Your home address">${user.address || ''}</textarea>
+                        </div>
+                        <button type="submit" class="w-full bg-green-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-green-700">Update Profile</button>
+                    </form>
+                </div>
+            `;
         }
 
 
@@ -876,6 +1022,160 @@
             }
         };
 
+        // FINANCIALS CRUD
+        window.openTransactionModal = () => {
+            const today = new Date().toISOString().split('T')[0];
+            const body = `<form onsubmit="handleTransactionSubmit(event)">
+                <label class="block mb-2 font-semibold">Student:</label>
+                <select id="transaction-student" class="w-full p-2 border rounded mb-4" required>
+                    <option value="">-- Select a Student --</option>
+                    ${state.students.map(s => `<option value="${s.id}">${s.name}</option>`).join('')}
+                </select>
+                <label class="block mb-2 font-semibold">Description:</label>
+                <input type="text" id="transaction-desc" class="w-full p-2 border rounded mb-4" placeholder="e.g., Tuition Fee" required>
+                <label class="block mb-2 font-semibold">Amount:</label>
+                <input type="number" id="transaction-amount" class="w-full p-2 border rounded mb-4" placeholder="0.00" step="0.01" required>
+                <label class="block mb-2 font-semibold">Date:</label>
+                <input type="date" id="transaction-date" class="w-full p-2 border rounded mb-4" value="${today}" required>
+                 <label class="block mb-2 font-semibold">Type:</label>
+                <select id="transaction-type" class="w-full p-2 border rounded mb-6" required>
+                    <option value="fee">Fee / Charge</option>
+                    <option value="payment">Payment</option>
+                </select>
+                <button type="submit" class="w-full bg-green-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-green-700">Add Transaction</button>
+            </form>`;
+            openModal("Add Financial Transaction", body);
+        }
+
+        window.handleTransactionSubmit = async (event) => {
+            event.preventDefault();
+            const transactionData = {
+                studentId: document.getElementById('transaction-student').value,
+                description: document.getElementById('transaction-desc').value,
+                amount: document.getElementById('transaction-amount').value,
+                date: document.getElementById('transaction-date').value,
+                type: document.getElementById('transaction-type').value,
+            };
+
+            try {
+                await addDoc(collection(db, dbPaths.transactions), transactionData);
+                showToast("Transaction added successfully!");
+                closeModal();
+            } catch(e) {
+                console.error("Error adding transaction:", e);
+                showToast("Failed to add transaction.", "error");
+            }
+        }
+        
+        // CALENDAR CRUD
+        window.openEventModal = () => {
+            const today = new Date().toISOString().split('T')[0];
+            const body = `<form onsubmit="handleEventSubmit(event)">
+                <label class="block mb-2 font-semibold">Event Title:</label>
+                <input type="text" id="event-title" class="w-full p-2 border rounded mb-4" required>
+                <label class="block mb-2 font-semibold">Date:</label>
+                <input type="date" id="event-date" class="w-full p-2 border rounded mb-4" value="${today}" required>
+                <label class="block mb-2 font-semibold">Description:</label>
+                <textarea id="event-description" class="w-full p-2 border rounded mb-6"></textarea>
+                <button type="submit" class="w-full bg-green-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-green-700">Save Event</button>
+            </form>`;
+            openModal("Add Calendar Event", body);
+        }
+
+        window.handleEventSubmit = async (event) => {
+            event.preventDefault();
+            const eventData = {
+                title: document.getElementById('event-title').value,
+                date: document.getElementById('event-date').value,
+                description: document.getElementById('event-description').value,
+            };
+            try {
+                await addDoc(collection(db, dbPaths.events), eventData);
+                showToast("Event added successfully!");
+                closeModal();
+            } catch(e) {
+                console.error("Error saving event:", e);
+                showToast("Failed to save event.", "error");
+            }
+        }
+
+        window.deleteEvent = async (eventId) => {
+            if (confirm("Are you sure you want to delete this event?")) {
+                try {
+                    await deleteDoc(doc(db, dbPaths.events, eventId));
+                    showToast("Event deleted.");
+                } catch(e) {
+                    showToast("Failed to delete event.", "error");
+                }
+            }
+        }
+
+        // LIBRARY CRUD
+        window.openBookModal = (bookId = null) => {
+            const book = bookId ? state.books.find(b => b.id === bookId) : null;
+            const title = book ? 'Edit Book' : 'Add New Book';
+            const body = `<form onsubmit="handleBookSubmit(event, '${bookId || ''}')">
+                <input type="text" id="book-title" placeholder="Title" value="${book?.title || ''}" class="w-full p-2 border rounded mb-4" required>
+                <input type="text" id="book-author" placeholder="Author" value="${book?.author || ''}" class="w-full p-2 border rounded mb-4" required>
+                <input type="text" id="book-isbn" placeholder="ISBN" value="${book?.isbn || ''}" class="w-full p-2 border rounded mb-4">
+                <input type="number" id="book-copies" placeholder="Total Copies" value="${book?.totalCopies || 1}" class="w-full p-2 border rounded mb-6" required min="1">
+                <button type="submit" class="w-full bg-green-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-green-700">Save Book</button>
+            </form>`;
+            openModal(title, body);
+        }
+
+        window.handleBookSubmit = async (event, bookId) => {
+            event.preventDefault();
+            const bookData = {
+                title: document.getElementById('book-title').value,
+                author: document.getElementById('book-author').value,
+                isbn: document.getElementById('book-isbn').value,
+                totalCopies: parseInt(document.getElementById('book-copies').value)
+            };
+            try {
+                if (bookId) {
+                    await updateDoc(doc(db, dbPaths.books, bookId), bookData);
+                    showToast('Book updated!');
+                } else {
+                    await addDoc(collection(db, dbPaths.books), bookData);
+                    showToast('Book added!');
+                }
+                closeModal();
+            } catch(e) {
+                showToast('Failed to save book.', 'error');
+            }
+        }
+
+        window.deleteBook = async (bookId) => {
+             if (confirm("Are you sure you want to delete this book?")) {
+                try {
+                    await deleteDoc(doc(db, dbPaths.books, bookId));
+                    showToast("Book deleted.");
+                } catch(e) {
+                    showToast("Failed to delete book.", "error");
+                }
+            }
+        }
+        
+        // PROFILE UPDATE
+        window.handleProfileUpdate = async (event) => {
+            event.preventDefault();
+            const profileData = {
+                phone: document.getElementById('profile-phone').value,
+                address: document.getElementById('profile-address').value
+            };
+            try {
+                await updateDoc(doc(db, dbPaths.users, state.user.uid), profileData);
+                // Also update local state for immediate feedback
+                state.user.phone = profileData.phone;
+                state.user.address = profileData.address;
+                showToast("Profile updated successfully!");
+            } catch (e) {
+                console.error("Error updating profile:", e);
+                showToast("Failed to update profile.", "error");
+            }
+        };
+
         // REPORTING LOGIC
         window.openStudentReportModal = () => {
             const body = `<label for="report-student-select" class="block mb-2">Select Student:</label>
@@ -962,6 +1262,3 @@
     </script>
 </body>
 </html>
-
-
-
