@@ -211,98 +211,94 @@
         let appInitialized = false; // Initialization guard flag
 
         // --- AUTHENTICATION ---
-        async function handleAuthentication() {
-            try {
-                // First, check for a redirect result. This doesn't throw if there's no redirect.
-                const result = await getRedirectResult(auth);
-                if (result && result.user) {
-                    // If we get a user from the redirect, we can proceed with initialization.
-                    // onAuthStateChanged will also fire with this user, but we can start early.
-                    initializeAppUI(result.user);
-                    return; 
-                }
-
-                // If no redirect result, check the current auth state.
-                onAuthStateChanged(auth, (user) => {
-                    if (user && !appInitialized) {
-                        initializeAppUI(user);
-                    } else if (!user) {
-                        // This block now only runs if there's definitively no user.
-                        document.getElementById('auth-message').textContent = 'Please sign in to continue.';
-                        document.getElementById('login-button').classList.remove('hidden');
-                        state.user = null;
-                        document.getElementById('auth-container').classList.remove('hidden');
-                        document.getElementById('app-container').classList.add('hidden');
-                        state.unsubscribeListeners.forEach(unsub => unsub());
-                        state.unsubscribeListeners = [];
-                        document.getElementById('content').innerHTML = '';
-                        appInitialized = false;
-                    }
-                });
-
-            } catch (error) {
-                console.error("Authentication Error:", error);
-                const authMessage = document.getElementById('auth-message');
-                authMessage.innerHTML = `
-                    <p class="text-red-600 font-bold text-center">Login Failed!</p>
-                    <p class="mt-2 text-sm text-slate-600">Could not complete sign-in. Please try again.</p>
-                `;
-                document.getElementById('login-button').classList.remove('hidden');
-            }
-        }
-
-        async function initializeAppUI(user) {
-            if (appInitialized) return; // Prevent re-initialization
-            appInitialized = true;
-
-            try {
-                const userRef = doc(db, dbPaths.users, user.uid);
-                let userDoc = await getDoc(userRef);
-                const isAdminEmail = user.email === 'peter.massaua@gmail.com';
-                let userProfile;
-
-                if (!userDoc.exists()) {
-                    userProfile = {
-                        uid: user.uid,
-                        email: user.email,
-                        displayName: user.displayName,
-                        role: isAdminEmail ? 'admin' : 'student', // Default role
-                        address: '',
-                        phone: '',
-                        emergencyContact: ''
-                    };
-                    await setDoc(userRef, userProfile);
-                } else {
-                    userProfile = userDoc.data();
-                    if (isAdminEmail && userProfile.role !== 'admin') {
-                        userProfile.role = 'admin';
-                        await updateDoc(userRef, { role: 'admin' });
-                    }
-                }
-                
-                state.user = userProfile;
-                
-                document.getElementById('auth-container').classList.add('hidden');
-                document.getElementById('app-container').classList.remove('hidden');
-                document.getElementById('content').innerHTML = `<div class="text-center text-slate-500 font-semibold p-8">Loading school data...</div>`;
-
-                document.getElementById('user-info').innerHTML = `
-                    <p class="font-semibold text-slate-800">${state.user.displayName}</p>
-                    <p class="text-xs text-slate-500 capitalize">${state.user.role}</p>
-                `;
-                
-                await loadInitialData();
-                setupRealtimeListeners();
-                populateNav();
-                router(); 
-            } catch (error) {
-                console.error("Error during app initialization:", error);
-                document.getElementById('content').innerHTML = `<div class="text-center text-red-500 font-semibold p-8">Could not load application data. Please refresh the page.</div>`;
-            }
-        }
         
-        handleAuthentication();
+        // We call getRedirectResult to handle any incoming login attempts from Google.
+        // Its primary purpose here is to process the redirect; onAuthStateChanged will handle all UI updates.
+        getRedirectResult(auth).catch((error) => {
+            console.error("Redirect Result Error:", error);
+            const authMessage = document.getElementById('auth-message');
+            authMessage.innerHTML = `
+                <p class="text-red-600 font-bold text-center">Login Failed!</p>
+                <p class="mt-2 text-sm text-slate-600">Could not complete sign-in. Please try again.</p>
+            `;
+            // Only show the button here if the redirect explicitly fails.
+            document.getElementById('login-button').classList.remove('hidden');
+        });
 
+        // onAuthStateChanged is the single source of truth for the user's auth state.
+        // It fires when the page loads and any time the auth state changes.
+        onAuthStateChanged(auth, async (user) => {
+            if (user) {
+                // User is signed in.
+                if (appInitialized) return; // Prevent re-initialization on minor auth token refreshes.
+                appInitialized = true;
+                
+                try {
+                    const userRef = doc(db, dbPaths.users, user.uid);
+                    let userDoc = await getDoc(userRef);
+                    const isAdminEmail = user.email === 'peter.massaua@gmail.com';
+                    let userProfile;
+
+                    if (!userDoc.exists()) {
+                        userProfile = {
+                            uid: user.uid,
+                            email: user.email,
+                            displayName: user.displayName,
+                            role: isAdminEmail ? 'admin' : 'student', // Default role for new users
+                            address: '',
+                            phone: '',
+                            emergencyContact: ''
+                        };
+                        await setDoc(userRef, userProfile);
+                    } else {
+                        userProfile = userDoc.data();
+                        // Ensure the admin user always has the admin role.
+                        if (isAdminEmail && userProfile.role !== 'admin') {
+                            userProfile.role = 'admin';
+                            await updateDoc(userRef, { role: 'admin' });
+                        }
+                    }
+                    
+                    state.user = userProfile;
+                    
+                    document.getElementById('auth-container').classList.add('hidden');
+                    document.getElementById('app-container').classList.remove('hidden');
+                    document.getElementById('content').innerHTML = `<div class="text-center text-slate-500 font-semibold p-8">Loading school data...</div>`;
+
+                    document.getElementById('user-info').innerHTML = `
+                        <p class="font-semibold text-slate-800">${state.user.displayName}</p>
+                        <p class="text-xs text-slate-500 capitalize">${state.user.role}</p>
+                    `;
+                    
+                    await loadInitialData();
+                    setupRealtimeListeners();
+                    populateNav();
+                    router(); 
+                } catch (error) {
+                    console.error("Error during app initialization:", error);
+                    document.getElementById('content').innerHTML = `<div class="text-center text-red-500 font-semibold p-8">Could not load application data. Please refresh the page.</div>`;
+                    // If initialization fails, sign the user out to prevent a broken state.
+                    signOut(auth);
+                }
+
+            } else {
+                // No user is signed in.
+                // Because we've already waited for getRedirectResult, if user is null here, they are truly not logged in.
+                document.getElementById('auth-message').textContent = 'Please sign in to continue.';
+                document.getElementById('login-button').classList.remove('hidden');
+                document.getElementById('auth-container').classList.remove('hidden');
+                document.getElementById('app-container').classList.add('hidden');
+                
+                // Reset state if a user was previously logged in.
+                if (appInitialized) {
+                    state.user = null;
+                    state.unsubscribeListeners.forEach(unsub => unsub());
+                    state.unsubscribeListeners = [];
+                    document.getElementById('content').innerHTML = '';
+                    appInitialized = false;
+                }
+            }
+        });
 
         document.getElementById('login-button').addEventListener('click', () => {
             const provider = new GoogleAuthProvider();
@@ -1262,3 +1258,4 @@
     </script>
 </body>
 </html>
+
