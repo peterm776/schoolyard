@@ -208,6 +208,7 @@
         
         let activeChart = null; // To hold the chart instance
         let routerDebounceTimer; // Timer for debouncing router calls
+        let appInitialized = false; // Initialization guard flag
 
         // --- AUTHENTICATION ---
 
@@ -224,7 +225,8 @@
             });
 
         onAuthStateChanged(auth, async (user) => {
-            if (user) {
+            if (user && !appInitialized) {
+                appInitialized = true; // Set the guard flag to prevent re-initialization
                 try {
                     const userRef = doc(db, dbPaths.users, user.uid);
                     let userDoc = await getDoc(userRef);
@@ -288,6 +290,7 @@
                 state.unsubscribeListeners.forEach(unsub => unsub());
                 state.unsubscribeListeners = [];
                 document.getElementById('content').innerHTML = '';
+                appInitialized = false; // Reset the guard flag on logout
             }
         });
 
@@ -959,5 +962,6 @@
     </script>
 </body>
 </html>
+
 
 
