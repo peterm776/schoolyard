@@ -49,7 +49,8 @@
         .text-primary-400 { color: var(--primary-400); }
         .text-primary-700 { color: var(--primary-700); }
         .border-primary-500 { border-color: var(--primary-500); }
-        .bg-primary-100\/80 { background-color: rgba(var(--primary-100), 0.8); }
+        .ring-primary-500 { ring-color: var(--primary-500); }
+        .bg-primary-100 { background-color: rgb(var(--primary-100)); }
         .nav-link.active { background-color: var(--primary-600); color: white; }
         .fc .fc-toolbar-title { font-size: 1.5em; font-weight: bold; color: #1e293b; }
         .fc .fc-daygrid-day-number { font-weight: 500; }
@@ -99,8 +100,8 @@
         const state = {
             user: null, school: null, allUsers: [], students: [], teachers: [], courses: [],
             dayTypes: [], timeBlocks: [], masterCalendar: [], schedules: [],
-            assignments: [], grades: [], attendance: [], events: [], messages: [], announcements: [],
-            tuition: [],
+            assignments: [], grades: [], attendance: [], events: [], announcements: [],
+            tuitionItems: [], launchpadLinks: [],
             unsubscribeListeners: [], currentCalendar: null,
         };
 
@@ -199,30 +200,67 @@
         });
 
         async function findUserSchoolAndLogin(user) {
-            const userQuery = query(collectionGroup(db, 'users'), where('email', '==', user.email));
-            const userSnapshot = await getDocs(userQuery);
+            // First, check if a non-placeholder user document exists for this UID
+            const userQueryByUid = query(collectionGroup(db, 'users'), where('uid', '==', user.uid));
+            const userSnapshotByUid = await getDocs(userQueryByUid);
 
-            if (userSnapshot.empty) {
-                state.user = { id: user.uid, displayName: user.displayName, email: user.email, isNew: true };
-                state.school = null;
-            } else {
-                const userDoc = userSnapshot.docs[0];
+            if (!userSnapshotByUid.empty) {
+                // User exists, log them in normally
+                const userDoc = userSnapshotByUid.docs[0];
                 const schoolId = userDoc.ref.parent.parent.id;
+                await loginToSchool(userDoc.id, schoolId);
+                return;
+            }
+            
+            // If no UID match, check for a placeholder user with this email
+            const placeholderQuery = query(collectionGroup(db, 'users'), where('email', '==', user.email), where('isPlaceholder', '==', true));
+            const placeholderSnapshot = await getDocs(placeholderQuery);
+
+            if (!placeholderSnapshot.empty) {
+                // Found a placeholder, convert it to a real user
+                const placeholderDoc = placeholderSnapshot.docs[0];
+                const schoolId = placeholderDoc.ref.parent.parent.id;
+                const userData = placeholderDoc.data();
+
+                const batch = writeBatch(db);
+                // Create the new user doc with the correct UID
+                const newUserRef = doc(db, 'schools', schoolId, 'users', user.uid);
+                batch.set(newUserRef, {
+                    ...userData,
+                    uid: user.uid,
+                    displayName: user.displayName,
+                    isPlaceholder: false,
+                    createdAt: serverTimestamp()
+                });
+                // Delete the old placeholder doc
+                batch.delete(placeholderDoc.ref);
+                await batch.commit();
                 
-                const schoolDoc = await getDoc(doc(db, 'schools', schoolId));
-                if (schoolDoc.exists()) {
-                    state.school = { id: schoolId, ...schoolDoc.data() };
-                    state.user = { id: userDoc.id, ...userDoc.data() };
-                    applyTheme(state.school.theme);
-                    setupRealtimeListeners();
-                } else {
-                    state.user = { id: user.uid, displayName: user.displayName, email: user.email, isNew: true };
-                    state.school = null;
-                    showToast("Your previous school could not be found.", "error");
-                }
+                showToast('Account activated successfully!', 'success');
+                await loginToSchool(user.uid, schoolId);
+
+            } else {
+                // No existing user or placeholder found, treat as a new user who can create a school
+                state.user = { uid: user.uid, displayName: user.displayName, email: user.email, isNew: true };
+                state.school = null;
             }
         }
         
+        async function loginToSchool(userId, schoolId) {
+            const schoolDoc = await getDoc(doc(db, 'schools', schoolId));
+            const userDoc = await getDoc(doc(db, 'schools', schoolId, 'users', userId));
+
+            if (schoolDoc.exists() && userDoc.exists()) {
+                state.school = { id: schoolId, ...schoolDoc.data() };
+                state.user = { id: userId, ...userDoc.data() };
+                applyTheme(state.school.theme);
+                setupRealtimeListeners();
+            } else {
+                showToast("Your school or user account could not be found.", "error");
+                await signOut(auth);
+            }
+        }
+
         function handleLogout() {
             Object.keys(state).forEach(key => {
                 if (key === 'unsubscribeListeners') state[key].forEach(unsub => unsub());
@@ -287,11 +325,6 @@
                 <form id="school-signup-form" class="text-left">
                     <label class="font-semibold text-slate-700">School Name</label>
                     <input id="signup-school-name" type="text" placeholder="e.g., St. Thomas of Villanova Prep" class="w-full p-2 border rounded-lg mb-4" required>
-                    <label class="font-semibold text-slate-700">School URL</label>
-                    <div class="flex items-center mb-6">
-                        <span class="text-slate-500 p-2 bg-slate-200 border rounded-l-lg">.../#/</span>
-                        <input id="signup-school-slug" type="text" placeholder="villanovaprep" class="w-full p-2 border-t border-b border-r rounded-r-lg" required>
-                    </div>
                     <button type="submit" class="w-full bg-green-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-green-700 flex items-center justify-center">Create School</button>
                 </form>
             `;
@@ -304,17 +337,17 @@
             submitBtn.disabled = true;
             submitBtn.innerHTML = `<div class="loader !w-6 !h-6 !border-2 !border-t-primary-500 mr-2"></div> Creating...`;
 
-            const schoolName = document.getElementById('signup-school-name').value;
-            const schoolSlug = document.getElementById('signup-school-slug').value.toLowerCase().trim();
+            const schoolName = document.getElementById('signup-school-name').value.trim();
+            const schoolSlug = schoolName.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
 
-            if (!schoolSlug.match(/^[a-z0-9-]+$/)) {
-                 submitBtn.disabled = false; submitBtn.textContent = 'Create School';
-                 return showToast('URL can only contain letters, numbers, and hyphens.', 'error');
+            if (!schoolName) {
+                submitBtn.disabled = false; submitBtn.textContent = 'Create School';
+                return showToast('School name cannot be empty.', 'error');
             }
             const existingSchool = await getSchoolBySlug(schoolSlug);
             if (existingSchool) {
-                 submitBtn.disabled = false; submitBtn.textContent = 'Create School';
-                 return showToast('This school URL is already taken.', 'error');
+                submitBtn.disabled = false; submitBtn.textContent = 'Create School';
+                return showToast('A school with a similar name already exists, creating a URL conflict.', 'error');
             }
 
             try {
@@ -322,8 +355,13 @@
                     name: schoolName, slug: schoolSlug, theme: 'sky', createdAt: serverTimestamp() 
                 });
                 
-                await setDoc(doc(db, 'schools', schoolRef.id, 'users', state.user.id), {
-                    displayName: state.user.displayName, email: state.user.email, role: 'admin', createdAt: serverTimestamp()
+                await setDoc(doc(db, 'schools', schoolRef.id, 'users', state.user.uid), {
+                    uid: state.user.uid,
+                    displayName: state.user.displayName,
+                    email: state.user.email,
+                    role: 'admin',
+                    isPlaceholder: false,
+                    createdAt: serverTimestamp()
                 });
 
                 showToast('School created successfully!', 'success');
@@ -371,13 +409,12 @@
 
         function setupRealtimeListeners() {
             if (state.unsubscribeListeners.length > 0) { state.unsubscribeListeners.forEach(unsub => unsub()); state.unsubscribeListeners = []; }
-            const collectionsToListen = ['users', 'courses', 'dayTypes', 'timeBlocks', 'masterCalendar', 'schedules', 'assignments', 'grades', 'attendance', 'events', 'announcements', 'tuition'];
+            const collectionsToListen = ['users', 'courses', 'dayTypes', 'timeBlocks', 'masterCalendar', 'schedules', 'assignments', 'grades', 'attendance', 'events', 'announcements', 'tuitionItems', 'launchpadLinks'];
             collectionsToListen.forEach(key => {
                 const q = query(collection(db, 'schools', state.school.id, key));
                 const unsubscribe = onSnapshot(q, (snapshot) => {
                     const hasChanges = snapshot.docChanges().length > 0;
                     if (state.user && hasChanges) {
-                        console.log(`Data changed in: ${key}`);
                         state[key] = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
                         if(key === 'users') {
                             state.allUsers = state.users;
@@ -416,24 +453,64 @@
             const todaysCalendarEntry = state.masterCalendar.find(entry => entry.date === today);
             
             let html = `<div class="grid grid-cols-1 lg:grid-cols-3 gap-6">`;
+            
+            // Today's Schedule Column
             html += `<div class="lg:col-span-1 bg-slate-50 p-4 rounded-lg"><h3 class="text-xl font-bold text-slate-700 mb-4">Today's Schedule</h3>`;
-            if (todaysCalendarEntry) { /* ... schedule logic ... */ } else { html += `<p class="text-slate-500">No school day scheduled for today.</p>`; }
+            if (todaysCalendarEntry) {
+                const dayType = state.dayTypes.find(dt => dt.id === todaysCalendarEntry.dayTypeId);
+                const timeBlocks = state.timeBlocks.filter(tb => tb.dayTypeId === dayType.id).sort((a,b) => a.startTime.localeCompare(b.startTime));
+                html += `<p class="font-semibold text-primary-600 mb-4">It's a "${dayType.name}" day.</p>`;
+                if (timeBlocks.length > 0) {
+                    html += `<ul class="space-y-2">`;
+                    // Assume student schedule is flat for now for simplicity in MyDay view
+                    const mySchedule = state.schedules.find(s => s.studentId === state.user.id);
+                    timeBlocks.forEach(tb => {
+                        const courseId = mySchedule?.schedule[tb.id];
+                        const course = courseId ? state.courses.find(c => c.id === courseId) : null;
+                        html += `<li class="p-3 bg-white rounded-md shadow-sm"><p class="font-bold text-slate-600">${tb.startTime} - ${tb.endTime}</p><p class="font-semibold text-slate-800">${tb.name}</p><p class="text-slate-500">${course ? course.name : 'Free Period'}</p></li>`;
+                    });
+                    html += `</ul>`;
+                } else {
+                    html += `<p class="text-slate-500">No time blocks defined for this day type.</p>`;
+                }
+            } else { 
+                html += `<p class="text-slate-500">No school day scheduled for today.</p>`; 
+            }
             html += `</div>`;
-            html += `<div class="lg:col-span-2 space-y-6"><div class="bg-slate-50 p-4 rounded-lg"><h3 class="text-xl font-bold text-slate-700 mb-4">Upcoming Assignments</h3>`;
+
+            // Assignments and Announcements Column
+            html += `<div class="lg:col-span-2 space-y-6">`;
+            // Upcoming Assignments
+            html += `<div class="bg-slate-50 p-4 rounded-lg"><h3 class="text-xl font-bold text-slate-700 mb-4">Upcoming Assignments</h3>`;
             const myCourses = state.courses.filter(c => c.studentIds?.includes(state.user.id) || c.teacherId === state.user.id);
             const upcomingAssignments = state.assignments.filter(a => myCourses.some(c => c.id === a.courseId) && new Date(a.dueDate) >= new Date()).sort((a,b) => new Date(a.dueDate) - new Date(b.dueDate));
             if (upcomingAssignments.length > 0) {
                 html += `<ul class="space-y-2">${upcomingAssignments.slice(0, 5).map(assign => { const course = state.courses.find(c => c.id === assign.courseId); return `<li class="p-3 bg-white rounded-md shadow-sm flex justify-between items-center"><div><p class="font-bold text-slate-800">${assign.title}</p><p class="text-sm text-slate-500">${course?.name || ''}</p></div><span class="font-semibold text-red-600">Due: ${assign.dueDate}</span></li>`; }).join('')}</ul>`;
             } else { html += `<p class="text-slate-500">No upcoming assignments. Great job!</p>`; }
-            html += `</div></div></div>`;
+            html += `</div>`;
+
+            // Recent Announcements
+            html += `<div class="bg-slate-50 p-4 rounded-lg"><h3 class="text-xl font-bold text-slate-700 mb-4">Recent Announcements</h3>`;
+            const myCourseIds = myCourses.map(c => c.id);
+            const recentAnnouncements = state.announcements.filter(a => myCourseIds.includes(a.courseId)).sort((a,b) => b.createdAt?.toDate() - a.createdAt?.toDate());
+             if (recentAnnouncements.length > 0) {
+                html += `<ul class="space-y-3">${recentAnnouncements.slice(0, 3).map(ann => { const course = state.courses.find(c => c.id === ann.courseId); const author = state.allUsers.find(u => u.id === ann.authorId); return `<li class="p-3 bg-white rounded-md shadow-sm"><div><p class="font-bold text-slate-800">${course?.name || 'School Announcement'}</p><p class="text-sm text-slate-500">By ${author?.displayName} on ${ann.createdAt?.toDate().toLocaleDateString()}</p></div><p class="mt-2 text-slate-700">${ann.content}</p></li>`; }).join('')}</ul>`;
+            } else { html += `<p class="text-slate-500">No recent announcements.</p>`; }
+            html += `</div>`;
+            
+            html += `</div></div>`;
             content.innerHTML = html;
         }
 
         function renderLaunchpad() {
             setPageTitle('Launchpad');
             const content = document.getElementById('content');
-            const apps = [ { name: 'Google Drive', icon: 'https://placehold.co/100x100/4285F4/FFFFFF?text=G', link: 'https://drive.google.com' }, { name: 'Library Catalog', icon: 'https://placehold.co/100x100/34A853/FFFFFF?text=L', link: '#' }, { name: 'Lunch Menu', icon: 'https://placehold.co/100x100/FBBC05/FFFFFF?text=M', link: '#' }, { name: 'Tech Support', icon: 'https://placehold.co/100x100/EA4335/FFFFFF?text=S', link: '#' } ];
-            content.innerHTML = `<div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-6">${apps.map(app => `<a href="${app.link}" target="_blank" rel="noopener noreferrer" class="flex flex-col items-center p-4 bg-slate-50 rounded-lg hover:bg-primary-100/50 hover:shadow-md transition-all"><img src="${app.icon}" alt="${app.name}" class="w-20 h-20 rounded-lg mb-2"><span class="font-semibold text-slate-700 text-center">${app.name}</span></a>`).join('')}</div>`;
+            const links = state.launchpadLinks.sort((a, b) => a.name.localeCompare(b.name));
+            if (links.length === 0) {
+                content.innerHTML = `<p class="text-slate-500 text-center">No Launchpad links have been configured by the administrator.</p>`;
+                return;
+            }
+            content.innerHTML = `<div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-6">${links.map(app => `<a href="${app.url}" target="_blank" rel="noopener noreferrer" class="flex flex-col items-center p-4 bg-slate-50 rounded-lg hover:bg-primary-100 hover:shadow-md transition-all"><div class="w-20 h-20 rounded-lg mb-2 bg-slate-200 flex items-center justify-center text-3xl font-bold text-primary-600">${app.name.charAt(0)}</div><span class="font-semibold text-slate-700 text-center">${app.name}</span></a>`).join('')}</div>`;
         }
 
         function renderCourses(idParts, params) {
@@ -493,28 +570,42 @@
              const today = new Date().toISOString().split('T')[0];
              const students = state.students.filter(s => course.studentIds?.includes(s.id));
              const todaysAttendance = state.attendance.find(a => a.date === today && a.courseId === course.id);
-             let html = `<div class="flex items-center justify-between mb-4"><h3 class="text-xl font-bold">Attendance for ${today}</h3><button id="save-attendance-btn" class="bg-green-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-green-700">Save Attendance</button></div><form id="attendance-form"><table class="min-w-full bg-white"><thead class="bg-slate-100"><tr><th class="py-3 px-4 text-left font-semibold text-slate-600">Student Name</th><th class="py-3 px-4 text-center font-semibold text-slate-600">Present</th><th class="py-3 px-4 text-center font-semibold text-slate-600">Absent</th><th class="py-3 px-4 text-center font-semibold text-slate-600">Tardy</th></tr></thead><tbody>${students.map(student => { const status = todaysAttendance?.statuses?.[student.id] || 'present'; return `<tr class="border-b"><td class="py-3 px-4 font-medium">${student.displayName}</td><td class="py-3 px-4 text-center"><input type="radio" name="${student.id}" value="present" ${status === 'present' ? 'checked' : ''} class="w-5 h-5"></td><td class="py-3 px-4 text-center"><input type="radio" name="${student.id}" value="absent" ${status === 'absent' ? 'checked' : ''} class="w-5 h-5"></td><td class="py-3 px-4 text-center"><input type="radio" name="${student.id}" value="tardy" ${status === 'tardy' ? 'checked' : ''} class="w-5 h-5"></td></tr>` }).join('')}</tbody></table></form>`;
+             let html = `<div class="flex items-center justify-between mb-4"><h3 class="text-xl font-bold">Attendance for ${today}</h3><button id="save-attendance-btn" class="bg-green-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-green-700">Save Attendance</button></div><form id="attendance-form"><table class="min-w-full bg-white"><thead class="bg-slate-100"><tr><th class="py-3 px-4 text-left font-semibold text-slate-600">Student Name</th><th class="py-3 px-4 text-center font-semibold text-slate-600">Present</th><th class="py-3 px-4 text-center font-semibold text-slate-600">Absent</th><th class="py-3 px-4 text-center font-semibold text-slate-600">Tardy</th></tr></thead><tbody>${students.map(student => { const status = todaysAttendance?.statuses?.[student.id] || 'present'; return `<tr class="border-b"><td class="py-3 px-4 font-medium">${student.displayName}</td><td class="py-3 px-4 text-center"><input type="radio" name="${student.id}" value="present" ${status === 'present' ? 'checked' : ''} class="w-5 h-5 text-primary-600 focus:ring-primary-500"></td><td class="py-3 px-4 text-center"><input type="radio" name="${student.id}" value="absent" ${status === 'absent' ? 'checked' : ''} class="w-5 h-5 text-primary-600 focus:ring-primary-500"></td><td class="py-3 px-4 text-center"><input type="radio" name="${student.id}" value="tardy" ${status === 'tardy' ? 'checked' : ''} class="w-5 h-5 text-primary-600 focus:ring-primary-500"></td></tr>` }).join('')}</tbody></table></form>`;
              content.innerHTML = html;
              document.getElementById('save-attendance-btn').addEventListener('click', () => handleAttendanceSubmit(course.id, today, todaysAttendance?.id));
         }
         
         function renderAttendance() {
             setPageTitle('Attendance');
-            document.getElementById('content').innerHTML = `<p class="text-slate-500">Please select a course to manage attendance from the Courses page.</p>`;
+            const content = document.getElementById('content');
+            if (state.user.role === 'teacher' || state.user.role === 'admin') {
+                const myCourses = state.courses.filter(c => c.teacherId === state.user.id || state.user.role === 'admin');
+                if (myCourses.length === 0) {
+                     content.innerHTML = `<p class="text-slate-500">You are not assigned to teach any courses.</p>`;
+                     return;
+                }
+                let html = `<h3 class="text-xl font-bold text-slate-700 mb-4">Select a course to take attendance for today:</h3><div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">`;
+                html += myCourses.map(course => `<a href="#/courses/${course.id}?tab=attendance" class="block p-4 bg-slate-50 hover:bg-primary-100 rounded-lg shadow-sm transition-colors"><p class="font-bold text-lg text-primary-700">${course.name}</p><p class="text-slate-500">${course.studentIds?.length || 0} students</p></a>`).join('');
+                html += `</div>`;
+                content.innerHTML = html;
+            } else {
+                 content.innerHTML = `<p class="text-slate-500">Attendance records are managed by teachers and administrators.</p>`;
+            }
         }
 
         function renderGradebook(idParts, params) {
             setPageTitle('Gradebook');
             const content = document.getElementById('content');
             const courseId = params.get('courseId');
-            let courseOptions = `<option value="">Select a course...</option>` + (state.user.role === 'admin' ? state.courses : state.courses.filter(c => c.teacherId === state.user.id)).map(c => `<option value="${c.id}" ${c.id === courseId ? 'selected' : ''}>${c.name}</option>`).join('');
+            const myCourses = state.user.role === 'admin' ? state.courses : state.courses.filter(c => c.teacherId === state.user.id);
+            let courseOptions = `<option value="">Select a course...</option>` + myCourses.map(c => `<option value="${c.id}" ${c.id === courseId ? 'selected' : ''}>${c.name}</option>`).join('');
             let html = `<div class="mb-4"><label for="gradebook-course-select" class="block font-semibold mb-2">Select a Course:</label><select id="gradebook-course-select" class="p-2 border rounded-lg w-full md:w-1/2">${courseOptions}</select></div>`;
             if (courseId) {
                 const course = state.courses.find(c => c.id === courseId);
                 const students = state.students.filter(s => course?.studentIds?.includes(s.id));
                 const assignments = state.assignments.filter(a => a.courseId === courseId);
                 const grades = state.grades.filter(g => g.courseId === courseId);
-                html += `<div class="overflow-x-auto"><table class="min-w-full text-sm gradebook-table"><thead class="bg-slate-100"><tr><th class="p-2 border font-semibold text-left">Student Name</th>${assignments.map(a => `<th class="p-2 border font-semibold">${a.title}</th>`).join('')}</tr></thead><tbody>${students.map(student => `<tr class="border-b"><td class="p-2 border font-medium text-left">${student.displayName}</td>${assignments.map(assignment => { const grade = grades.find(g => g.studentId === student.id && g.assignmentId === assignment.id); return `<td class="p-0 border"><input type="text" value="${grade?.score || ''}" onchange="updateGrade('${student.id}', '${assignment.id}', '${courseId}', this.value)" class="w-full h-full text-center p-2 outline-none focus:bg-primary-100/50" /></td>` }).join('')}</tr>`).join('')}</tbody></table></div>`;
+                html += `<div class="overflow-x-auto"><table class="min-w-full text-sm gradebook-table"><thead class="bg-slate-100"><tr><th class="p-2 border font-semibold text-left">Student Name</th>${assignments.map(a => `<th class="p-2 border font-semibold">${a.title}</th>`).join('')}</tr></thead><tbody>${students.map(student => `<tr class="border-b"><td class="p-2 border font-medium text-left">${student.displayName}</td>${assignments.map(assignment => { const grade = grades.find(g => g.studentId === student.id && g.assignmentId === assignment.id); return `<td class="p-0 border"><input type="text" value="${grade?.score || ''}" onchange="updateGrade('${student.id}', '${assignment.id}', '${courseId}', this.value)" class="w-full h-full text-center p-2 outline-none focus:bg-primary-100" /></td>` }).join('')}</tr>`).join('')}</tbody></table></div>`;
             }
             content.innerHTML = html;
             const selectEl = document.getElementById('gradebook-course-select');
@@ -523,7 +614,37 @@
 
         function renderTuition() {
             setPageTitle('Tuition & Billing');
-            document.getElementById('content').innerHTML = `<div class="bg-slate-50 rounded-lg p-6 max-w-lg mx-auto"><h3 class="text-xl font-bold text-slate-700 mb-4">Account Summary</h3><div class="space-y-2"><div class="flex justify-between items-center"><p>Total Tuition:</p><p class="font-semibold">$15,000.00</p></div><div class="flex justify-between items-center"><p>Financial Aid:</p><p class="font-semibold text-green-600">-$2,500.00</p></div><div class="flex justify-between items-center border-t pt-2 mt-2"><p class="font-bold">Balance Due:</p><p class="font-bold text-red-600">$12,500.00</p></div></div><button class="w-full mt-6 bg-green-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-green-700">Make a Payment</button><p class="text-xs text-center text-slate-500 mt-2">Payment processing is a demo feature.</p></div>`;
+            const content = document.getElementById('content');
+            
+            if (state.user.role === 'admin') {
+                content.innerHTML = `Admin tuition management view is under construction.`;
+                return;
+            }
+            // For students/parents
+            const myTuitionItems = state.tuitionItems.filter(item => item.studentId === state.user.id);
+            const totalCharges = myTuitionItems.reduce((sum, item) => sum + (parseFloat(item.amount) || 0), 0);
+            
+            let html = `<div class="bg-slate-50 rounded-lg p-6 max-w-2xl mx-auto">
+                <h3 class="text-xl font-bold text-slate-700 mb-4">Account Summary for ${state.user.displayName}</h3>`;
+
+            if (myTuitionItems.length > 0) {
+                html += `<table class="w-full mb-4"><thead><tr class="border-b"><th class="text-left font-semibold py-2">Item Description</th><th class="text-right font-semibold py-2">Amount</th></tr></thead><tbody>`;
+                myTuitionItems.forEach(item => {
+                    html += `<tr><td class="py-2">${item.description}</td><td class="text-right py-2">$${parseFloat(item.amount).toFixed(2)}</td></tr>`;
+                });
+                html += `</tbody></table>`;
+            } else {
+                 html += `<p class="text-slate-500 mb-4">No tuition items have been posted to your account yet.</p>`;
+            }
+
+            html += `<div class="flex justify-between items-center border-t pt-4 mt-4">
+                        <p class="text-lg font-bold">Balance Due:</p>
+                        <p class="text-lg font-bold text-red-600">$${totalCharges.toFixed(2)}</p>
+                    </div>
+                <button class="w-full mt-6 bg-green-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-green-700">Make a Payment</button>
+                <p class="text-xs text-center text-slate-500 mt-2">Payment processing is a demo feature.</p>
+            </div>`;
+            content.innerHTML = html;
         }
         
         function renderCalendar() {
@@ -549,14 +670,14 @@
 
         function renderProfile() {
             setPageTitle('Profile');
-            document.getElementById('content').innerHTML = `<div class="bg-slate-50 p-6 rounded-lg max-w-md mx-auto"><h3 class="text-2xl font-bold text-slate-800">${state.user.displayName}</h3><p class="text-slate-600">${state.user.email}</p><p class="mt-2 inline-block bg-primary-100/80 text-primary-700 font-semibold px-3 py-1 rounded-full text-sm capitalize">${state.user.role}</p></div>`;
+            document.getElementById('content').innerHTML = `<div class="bg-slate-50 p-6 rounded-lg max-w-md mx-auto"><h3 class="text-2xl font-bold text-slate-800">${state.user.displayName}</h3><p class="text-slate-600">${state.user.email}</p><p class="mt-2 inline-block bg-primary-100 text-primary-700 font-semibold px-3 py-1 rounded-full text-sm capitalize">${state.user.role}</p></div>`;
         }
         
         function renderSettings(idParts) {
             if(state.user.role !== 'admin') { return document.getElementById('content').innerHTML = `<p>You do not have permission to view this page.</p>`; }
             setPageTitle('Settings');
             const [tabName = 'dayTypes'] = idParts;
-            document.getElementById('content').innerHTML = `<div id="settings-tabs" class="flex border-b mb-6 overflow-x-auto"><a href="#/settings/dayTypes" class="settings-tab p-4 border-b-2 whitespace-nowrap" data-tab="dayTypes">Day Types</a><a href="#/settings/timeBlocks" class="settings-tab p-4 border-b-2 whitespace-nowrap" data-tab="timeBlocks">Time Blocks</a><a href="#/settings/masterCalendar" class="settings-tab p-4 border-b-2 whitespace-nowrap" data-tab="masterCalendar">Master Calendar</a><a href="#/settings/schedules" class="settings-tab p-4 border-b-2 whitespace-nowrap" data-tab="schedules">Student Schedules</a><a href="#/settings/theme" class="settings-tab p-4 border-b-2 whitespace-nowrap" data-tab="theme">Theme</a></div><div id="settings-content"></div>`;
+            document.getElementById('content').innerHTML = `<div id="settings-tabs" class="flex border-b mb-6 overflow-x-auto"><a href="#/settings/dayTypes" class="settings-tab p-4 border-b-2 whitespace-nowrap" data-tab="dayTypes">Day Types</a><a href="#/settings/timeBlocks" class="settings-tab p-4 border-b-2 whitespace-nowrap" data-tab="timeBlocks">Time Blocks</a><a href="#/settings/masterCalendar" class="settings-tab p-4 border-b-2 whitespace-nowrap" data-tab="masterCalendar">Master Calendar</a><a href="#/settings/launchpad" class="settings-tab p-4 border-b-2 whitespace-nowrap" data-tab="launchpad">Launchpad Links</a><a href="#/settings/tuition" class="settings-tab p-4 border-b-2 whitespace-nowrap" data-tab="tuition">Tuition Items</a><a href="#/settings/theme" class="settings-tab p-4 border-b-2 whitespace-nowrap" data-tab="theme">Theme</a></div><div id="settings-content"></div>`;
             renderSettingsTab(tabName);
         }
         
@@ -564,8 +685,12 @@
             document.querySelectorAll('.settings-tab').forEach(t => t.classList.remove('active'));
             document.querySelector(`.settings-tab[data-tab="${tabName}"]`)?.classList.add('active');
             const content = document.getElementById('settings-content');
-            if (tabName === 'theme') { renderThemeSettings(content); return; }
-            content.innerHTML = `<h3 class="text-lg font-bold">Data Management</h3><p class="text-slate-500">This feature is under development.</p>`;
+            const tabRenderers = {
+                'theme': renderThemeSettings, 'dayTypes': renderDayTypeSettings,
+                'timeBlocks': renderTimeBlockSettings, 'masterCalendar': renderMasterCalendarSettings,
+                'launchpad': renderLaunchpadSettings, 'tuition': renderTuitionSettings,
+            };
+            (tabRenderers[tabName] || renderDayTypeSettings)(content);
         }
 
         function renderThemeSettings(container) {
@@ -573,14 +698,86 @@
             let swatchesHtml = Object.keys(palettes).map(themeName => { const p = palettes[themeName]; const isActive = themeName === currentTheme; return `<div class="flex items-center space-x-2"><button onclick="handleThemeChange('${themeName}')" class="w-10 h-10 rounded-full border-4 ${isActive ? `border-slate-800` : `border-transparent`}" style="background-color: ${p[500]}"></button><span class="capitalize font-medium">${themeName}</span></div>` }).join('');
             container.innerHTML = `<h3 class="text-xl font-bold text-slate-700 mb-4">Select a Color Scheme</h3><div class="flex flex-wrap gap-6">${swatchesHtml}</div>`;
         }
+        
+        function renderDayTypeSettings(container) {
+            let html = `<div class="flex justify-between items-center mb-4"><h3 class="text-xl font-bold text-slate-700">Manage Day Types</h3><button onclick="openDayTypeModal()" class="bg-primary-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-primary-600">Add Day Type</button></div>`;
+            if (state.dayTypes.length > 0) {
+                html += `<ul class="space-y-2">${state.dayTypes.map(dt => `<li class="p-3 bg-slate-50 rounded-md flex justify-between items-center"><span>${dt.name}</span><div class="flex space-x-2"><button onclick="openDayTypeModal('${dt.id}')" class="text-yellow-600 hover:text-yellow-800 font-semibold">Edit</button><button onclick="deleteDayType('${dt.id}')" class="text-red-600 hover:text-red-800 font-semibold">Delete</button></div></li>`).join('')}</ul>`;
+            } else {
+                html += `<p class="text-slate-500">No day types created. Add one to get started (e.g., "A Day", "B Day").</p>`;
+            }
+            container.innerHTML = html;
+        }
+
+        function renderTimeBlockSettings(container) {
+            let dayTypeOptions = state.dayTypes.map(dt => `<option value="${dt.id}">${dt.name}</option>`).join('');
+            let html = `<div class="flex justify-between items-center mb-4"><h3 class="text-xl font-bold text-slate-700">Manage Time Blocks</h3></div>`;
+            html += `<div class="mb-4"><label for="day-type-select" class="block font-semibold mb-2">Select Day Type to Edit:</label><select id="day-type-select" class="p-2 border rounded-lg w-full md:w-1/2">${dayTypeOptions}</select></div><hr class="my-4"><div id="time-blocks-for-day"></div>`;
+            container.innerHTML = html;
+
+            const selectEl = document.getElementById('day-type-select');
+            selectEl.addEventListener('change', (e) => renderTimeBlocksForSelectedDay(e.target.value));
+            if (state.dayTypes.length > 0) {
+                renderTimeBlocksForSelectedDay(state.dayTypes[0].id);
+                selectEl.value = state.dayTypes[0].id;
+            }
+        }
+        
+        function renderLaunchpadSettings(container) {
+             let html = `<div class="flex justify-between items-center mb-4"><h3 class="text-xl font-bold text-slate-700">Manage Launchpad Links</h3><button onclick="openLaunchpadLinkModal()" class="bg-primary-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-primary-600">Add Link</button></div>`;
+            if (state.launchpadLinks.length > 0) {
+                html += `<ul class="space-y-2">${state.launchpadLinks.map(link => `<li class="p-3 bg-slate-50 rounded-md flex justify-between items-center"><div><p class="font-semibold">${link.name}</p><p class="text-sm text-slate-500">${link.url}</p></div><div class="flex space-x-2"><button onclick="openLaunchpadLinkModal('${link.id}')" class="text-yellow-600 hover:text-yellow-800 font-semibold">Edit</button><button onclick="deleteLaunchpadLink('${link.id}')" class="text-red-600 hover:text-red-800 font-semibold">Delete</button></div></li>`).join('')}</ul>`;
+            } else {
+                html += `<p class="text-slate-500">No launchpad links created.</p>`;
+            }
+            container.innerHTML = html;
+        }
+
+        function renderTuitionSettings(container) {
+            let html = `<div class="flex justify-between items-center mb-4"><h3 class="text-xl font-bold text-slate-700">Manage Tuition Items</h3><button onclick="openTuitionItemModal()" class="bg-primary-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-primary-600">Add Item</button></div>`;
+            const allItems = state.tuitionItems;
+            if (allItems.length > 0) {
+                html += `<div class="overflow-x-auto"><table class="min-w-full bg-white"><thead class="bg-slate-100"><tr><th class="py-3 px-4 text-left">Student</th><th class="py-3 px-4 text-left">Description</th><th class="py-3 px-4 text-right">Amount</th><th class="py-3 px-4 text-center">Actions</th></tr></thead><tbody>`;
+                allItems.forEach(item => {
+                    const student = state.students.find(s => s.id === item.studentId);
+                    html += `<tr class="border-b"><td class="py-2 px-4">${student?.displayName || 'N/A'}</td><td class="py-2 px-4">${item.description}</td><td class="py-2 px-4 text-right">$${parseFloat(item.amount).toFixed(2)}</td><td class="py-2 px-4 text-center"><button onclick="openTuitionItemModal('${item.id}')" class="text-yellow-600">Edit</button><button onclick="deleteTuitionItem('${item.id}')" class="ml-4 text-red-600">Delete</button></td></tr>`;
+                });
+                html += `</tbody></table></div>`;
+            } else {
+                 html += `<p class="text-slate-500">No tuition items have been created.</p>`;
+            }
+            container.innerHTML = html;
+        }
+
+        function renderMasterCalendarSettings(container) {
+            container.innerHTML = `<h3 class="text-xl font-bold text-slate-700 mb-2">Assign Day Types to Calendar</h3><p class="text-slate-500 mb-4">Click on a date to assign a day type.</p><div id='master-calendar'></div>`;
+            setTimeout(() => {
+                const calendarEl = document.getElementById('master-calendar');
+                if(!calendarEl) return;
+                const events = state.masterCalendar.map(mc => {
+                    const dayType = state.dayTypes.find(dt => dt.id === mc.dayTypeId);
+                    return { id: mc.id, title: dayType?.name || 'Unknown', start: mc.date, allDay: true };
+                });
+                const calendar = new FullCalendar.Calendar(calendarEl, {
+                    initialView: 'dayGridMonth',
+                    events: events,
+                    dateClick: (info) => openMasterCalendarModal(info.dateStr),
+                    eventClick: (info) => {
+                        const mcEntry = state.masterCalendar.find(mc => mc.id === info.event.id);
+                        if (mcEntry) openMasterCalendarModal(mcEntry.date, mcEntry.id);
+                    }
+                });
+                calendar.render();
+            }, 0);
+        }
 
         // --- GLOBAL HELPER & CRUD FUNCTIONS ---
         window.closeModal = () => document.getElementById('modal-template').classList.add('hidden');
         window.openModal = (title, body, size = 'lg') => { document.getElementById('modal-title').innerText = title; document.getElementById('modal-body').innerHTML = body; const mc = document.getElementById('modal-content'); mc.className = mc.className.replace(/max-w-\S+/g, `max-w-${size}`); const m = document.getElementById('modal-template'); m.classList.remove('hidden'); m.classList.add('flex'); };
         window.showToast = (message, type = 'success') => { const c = document.getElementById('toast-container'); const t = document.createElement('div'); t.className = `toast ${type === 'success' ? 'bg-green-500' : 'bg-red-500'} text-white font-bold py-2 px-4 rounded-lg shadow-lg mb-2 opacity-0 transform translate-y-2`; t.textContent = message; c.appendChild(t); setTimeout(() => t.classList.remove('opacity-0', 'translate-y-2'), 100); setTimeout(() => { t.classList.add('opacity-0'); t.addEventListener('transitionend', () => t.remove()); }, 3000); };
-        Object.assign(window, { closeModal, openModal, showToast });
         
         // --- ALL CRUD FUNCTIONS ---
+        // User CRUD
         window.openUserModal = (userId = null) => {
             const user = userId ? state.allUsers.find(u => u.id === userId) : null;
             const title = user ? 'Edit User' : 'Add New User';
@@ -593,10 +790,13 @@
             const formData = new FormData(e.target); const data = Object.fromEntries(formData.entries()); const userId = data.id;
             try {
                 if (userId) { await updateDoc(doc(db, 'schools', state.school.id, 'users', userId), { displayName: data.displayName, email: data.email, role: data.role }); showToast('User updated!', 'success'); } 
-                else { const ref = doc(collection(db, 'schools', state.school.id, 'users')); await setDoc(ref, { displayName: data.displayName, email: data.email, role: data.role, isPlaceholder: true }); showToast('User added! They must log in with Google to activate.', 'success'); }
+                else { await addDoc(collection(db, 'schools', state.school.id, 'users'), { displayName: data.displayName, email: data.email, role: data.role, isPlaceholder: true }); showToast('User added! They must log in with Google to activate.', 'success'); }
                 closeModal();
             } catch (err) { showToast(`Error: ${err.message}`, 'error'); }
         }
+        window.deleteUser = async (userId) => { if(userId === state.user.id) { showToast("You cannot delete yourself.", "error"); return; } if (confirm('Are you sure you want to delete this user?')) { try { await deleteDoc(doc(db, 'schools', state.school.id, 'users', userId)); showToast('User deleted.', 'success'); } catch (err) { showToast(`Error deleting user: ${err.message}`, 'error'); } } };
+        
+        // Course CRUD
         window.openCourseModal = (courseId = null) => {
             const course = courseId ? state.courses.find(c => c.id === courseId) : null;
             let teacherOptions = state.teachers.map(t => `<option value="${t.id}" ${course?.teacherId === t.id ? 'selected' : ''}>${t.displayName}</option>`).join('');
@@ -617,7 +817,19 @@
                 closeModal();
             } catch (err) { showToast(`Error saving course: ${err.message}`, 'error'); }
         }
-        window.deleteUser = async (userId) => { if (confirm('Are you sure you want to delete this user?')) { try { await deleteDoc(doc(db, 'schools', state.school.id, 'users', userId)); showToast('User deleted.', 'success'); } catch (err) { showToast(`Error deleting user: ${err.message}`, 'error'); } } };
+        
+        // Settings -> Day Type CRUD
+        window.openDayTypeModal = (dayTypeId = null) => {
+            const dt = dayTypeId ? state.dayTypes.find(d => d.id === dayTypeId) : null;
+            const title = dt ? 'Edit Day Type' : 'Add Day Type';
+            const body = `<form id="day-type-form"><input type="hidden" name="id" value="${dt?.id || ''}"><label class="block font-semibold mb-1">Day Type Name</label><input type="text" name="name" value="${dt?.name || ''}" placeholder="e.g., A Day" class="w-full p-2 border rounded-lg mb-4" required><button type="submit" class="w-full bg-green-600 text-white font-bold py-3 px-4 rounded-lg">Save</button></form>`;
+            openModal(title, body, 'md');
+            document.getElementById('day-type-form').addEventListener('submit', handleDayTypeSubmit);
+        };
+        async function handleDayTypeSubmit(e) { e.preventDefault(); const id = e.target.elements.id.value; const name = e.target.elements.name.value; if (id) { await updateDoc(doc(db, 'schools', state.school.id, 'dayTypes', id), { name }); } else { await addDoc(collection(db, 'schools', state.school.id, 'dayTypes'), { name }); } closeModal(); };
+        window.deleteDayType = async (id) => { if (confirm('Are you sure? This will delete associated time blocks.')) { await deleteDoc(doc(db, 'schools', state.school.id, 'dayTypes', id)); } };
+
+        // Other CRUD functions...
         window.handleThemeChange = async (themeName) => { try { await updateDoc(doc(db, 'schools', state.school.id), { theme: themeName }); showToast('Theme updated successfully!', 'success'); } catch (err) { showToast(`Error updating theme: ${err.message}`, 'error'); } };
         async function handleAnnouncementSubmit(e, courseId) { e.preventDefault(); const content = e.target.elements.content.value; if (!content.trim()) return; try { await addDoc(collection(db, 'schools', state.school.id, 'announcements'), { courseId, authorId: state.user.id, content, createdAt: serverTimestamp() }); e.target.reset(); } catch (err) { showToast(`Error posting: ${err.message}`, 'error') } }
         window.openAssignmentModal = (assignmentId, courseId) => { const assignment = assignmentId ? state.assignments.find(a => a.id === assignmentId) : null; const title = assignment ? 'Edit Assignment' : 'New Assignment'; const body = `<form id="assignment-form"><input type="hidden" name="id" value="${assignment?.id || ''}"><input type="hidden" name="courseId" value="${courseId}"><label class="block font-semibold mb-1">Title</label><input type="text" name="title" value="${assignment?.title || ''}" class="w-full p-2 border rounded-lg mb-4" required><label class="block font-semibold mb-1">Due Date</label><input type="date" name="dueDate" value="${assignment?.dueDate || ''}" class="w-full p-2 border rounded-lg mb-6" required><button type="submit" class="w-full bg-green-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-green-700">Save Assignment</button></form>`; openModal(title, body); document.getElementById('assignment-form').addEventListener('submit', handleAssignmentFormSubmit); };
@@ -625,11 +837,19 @@
         window.deleteAssignment = async (assignmentId) => { if (confirm('Delete this assignment?')) { await deleteDoc(doc(db, 'schools', state.school.id, 'assignments', assignmentId)); showToast('Assignment deleted.', 'success'); } };
         window.updateGrade = async (studentId, assignmentId, courseId, score) => { const gradeId = `${studentId}_${assignmentId}`; try { await setDoc(doc(db, 'schools', state.school.id, 'grades', gradeId), { studentId, assignmentId, courseId, score }); showToast(`Grade saved.`, 'success'); } catch (err) { showToast(`Error saving grade: ${err.message}`, 'error') } };
         async function handleAttendanceSubmit(courseId, date, attendanceId) { const form = document.getElementById('attendance-form'); const formData = new FormData(form); const statuses = Object.fromEntries(formData.entries()); const data = { courseId, date, statuses }; try { if (attendanceId) { await updateDoc(doc(db, 'schools', state.school.id, 'attendance', attendanceId), data); } else { await addDoc(collection(db, 'schools', state.school.id, 'attendance'), data); } showToast('Attendance saved!', 'success'); } catch (err) { showToast(`Error saving attendance: ${err.message}`, 'error') } }
-
+        
+        // Attach all CRUD functions to window for inline HTML access
+        Object.assign(window, {
+             openUserModal, handleUserFormSubmit, deleteUser,
+             openCourseModal, handleCourseFormSubmit,
+             handleThemeChange, handleAnnouncementSubmit,
+             openAssignmentModal, handleAssignmentFormSubmit, deleteAssignment, updateGrade, handleAttendanceSubmit,
+             openDayTypeModal, deleteDayType
+        });
+        
         // Initialize with default theme before login
         applyTheme();
         router();
     </script>
 </body>
 </html>
-
