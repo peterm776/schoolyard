@@ -8,51 +8,35 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <script src='https://cdn.jsdelivr.net/npm/fullcalendar@6.1.11/index.global.min.js'></script>
     <style>
-        body {
-            font-family: 'Inter', sans-serif;
-            background-color: #f8fafc;
-        }
-        .sidebar {
-            transition: transform 0.3s ease-in-out;
-        }
-        .main-content {
-            transition: margin-left 0.3s ease-in-out;
-        }
+        body { font-family: 'Inter', sans-serif; background-color: #f8fafc; }
+        .sidebar { transition: transform 0.3s ease-in-out; }
+        .main-content { transition: margin-left 0.3s ease-in-out; }
         ::-webkit-scrollbar { width: 8px; height: 8px; }
         ::-webkit-scrollbar-track { background: #f1f1f1; }
         ::-webkit-scrollbar-thumb { background: #a3a3a3; border-radius: 4px; }
         ::-webkit-scrollbar-thumb:hover { background: #737373; }
-        .nav-link.active {
-            background-color: #0284c7;
-            color: white;
-        }
-        .toast {
-            transition: opacity 0.5s, transform 0.5s;
-        }
+        .nav-link.active { background-color: #0284c7; color: white; }
+        .toast { transition: opacity 0.5s, transform 0.5s; }
         @media (max-width: 768px) {
             .sidebar { transform: translateX(-100%); }
             .sidebar.open { transform: translateX(0); }
             .main-content { margin-left: 0; }
         }
         :root {
-            --fc-border-color: #e2e8f0;
-            --fc-daygrid-event-dot-width: 8px;
-            --fc-today-bg-color: rgba(14, 165, 233, 0.1);
-            --fc-button-bg-color: #0ea5e9;
-            --fc-button-border-color: #0ea5e9;
-            --fc-button-hover-bg-color: #0284c7;
+            --fc-border-color: #e2e8f0; --fc-daygrid-event-dot-width: 8px;
+            --fc-today-bg-color: rgba(14, 165, 233, 0.1); --fc-button-bg-color: #0ea5e9;
+            --fc-button-border-color: #0ea5e9; --fc-button-hover-bg-color: #0284c7;
             --fc-button-hover-border-color: #0284c7;
         }
         .fc .fc-toolbar-title { font-size: 1.5em; font-weight: bold; color: #1e293b; }
         .fc .fc-daygrid-day-number { font-weight: 500; }
+        .gradebook-table th { white-space: nowrap; }
     </style>
 </head>
 <body class="bg-slate-100 antialiased">
 
-    <!-- This single div will hold all views, which we'll toggle between -->
     <div id="router-outlet"></div>
     
-    <!-- Modal and Toast containers -->
     <div id="modal-template" class="fixed inset-0 bg-black bg-opacity-50 z-50 hidden items-center justify-center p-4">
         <div class="modal-content bg-white rounded-lg shadow-xl p-8 w-full max-w-lg" onclick="event.stopPropagation()">
             <div class="flex justify-between items-center mb-4">
@@ -100,10 +84,11 @@
             calendar: { href: 'calendar', text: 'Calendar', icon: `<svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>`},
             messages: { href: 'messages', text: 'Messages', icon: `<svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>`},
             profile: { href: 'profile', text: 'Profile', icon: `<svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>`},
+            settings: { href: 'settings', text: 'Settings', icon: `<svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.096 2.572-1.065z" /><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>`}
         };
         
         const rolesConfig = {
-            admin: ['myday', 'users', 'courses', 'gradebook', 'calendar', 'messages', 'profile'],
+            admin: ['myday', 'users', 'courses', 'gradebook', 'calendar', 'messages', 'profile', 'settings'],
             teacher: ['myday', 'courses', 'gradebook', 'calendar', 'messages', 'profile'],
             student: ['myday', 'courses', 'gradebook', 'calendar', 'messages', 'profile'],
             parent: ['myday', 'gradebook', 'calendar', 'messages', 'profile'],
@@ -165,7 +150,6 @@
             }
             state.school = school;
             
-            // Check for and claim placeholder admin account on first login
             const placeholderQuery = query(collection(db, 'schools', school.id, 'users'), where('email', '==', user.email), where('isPlaceholder', '==', true));
             const placeholderSnapshot = await getDocs(placeholderQuery);
             
@@ -204,20 +188,22 @@
 
         function getRoute() {
             const hash = window.location.hash.replace('#/', '');
-            const [part1, part2] = hash.split('/');
-            if (part1 === 'signup') return ['signup', null];
-            return [part1 || null, part2 || 'myday'];
+            const [part1, part2] = hash.split('?');
+            const [slug, page] = part1.split('/');
+            
+            if (slug === 'signup') return ['signup', null, null];
+            return [slug || null, page || 'myday', new URLSearchParams(part2 || '')];
         }
 
         async function router() {
             const outlet = document.getElementById('router-outlet');
-            const [schoolSlug, page] = getRoute();
+            const [schoolSlug, page, params] = getRoute();
 
             if (state.user && state.school) {
                 outlet.innerHTML = templates.appView;
                 renderAppShell();
                 const renderFunction = routes[page]?.render;
-                if (renderFunction) renderFunction(); else routes['myday'].render();
+                if (renderFunction) renderFunction(params); else routes['myday'].render(params);
             } else {
                 outlet.innerHTML = templates.authView;
                 renderAuthView(schoolSlug);
@@ -307,26 +293,19 @@
             const adminName = document.getElementById('signup-admin-name').value;
             const adminEmail = document.getElementById('signup-admin-email').value;
 
-            if (!schoolSlug.match(/^[a-z0-9-]+$/)) {
-                return showToast('URL can only contain letters, numbers, and hyphens.', 'error');
-            }
-
+            if (!schoolSlug.match(/^[a-z0-9-]+$/)) return showToast('URL can only contain letters, numbers, and hyphens.', 'error');
+            
             const existingSchool = await getSchoolBySlug(schoolSlug);
-            if (existingSchool) {
-                return showToast('This school URL is already taken.', 'error');
-            }
+            if (existingSchool) return showToast('This school URL is already taken.', 'error');
 
             try {
-                const schoolRef = await addDoc(collection(db, 'schools'), {
-                    name: schoolName, slug: schoolSlug, createdAt: serverTimestamp()
-                });
+                const schoolRef = await addDoc(collection(db, 'schools'), { name: schoolName, slug: schoolSlug, createdAt: serverTimestamp() });
                 
                 const q = query(collectionGroup(db, 'users'), where('email', '==', adminEmail));
                 const existingUsers = await getDocs(q);
                 if (!existingUsers.empty) {
-                    // This is a simplification. A real app would need a more robust check.
                     showToast('An admin with this email already exists in another school.', 'error');
-                    await deleteDoc(doc(db, 'schools', schoolRef.id)); // Rollback
+                    await deleteDoc(doc(db, 'schools', schoolRef.id));
                     return;
                 }
 
@@ -340,7 +319,6 @@
                     <p class="text-slate-600 mb-6">To finish setup, the administrator (<strong>${adminEmail}</strong>) must sign in for the first time using Google.</p>
                     <a href="#/${schoolSlug}" class="w-full bg-sky-500 text-white font-bold py-3 px-4 rounded-lg hover:bg-sky-600 inline-block">Go to Your School's Login Page</a>
                 `;
-
             } catch (error) {
                 console.error("Error creating school:", error);
                 showToast('Could not create school. Please try again.', 'error');
@@ -352,10 +330,7 @@
         function renderAppShell() {
             document.getElementById('sidebar-school-name').textContent = state.school.name;
             document.getElementById('user-info').innerHTML = `<p class="font-semibold text-slate-800">${state.user.displayName}</p><p class="text-xs text-slate-500 capitalize">${state.user.role}</p>`;
-            document.getElementById('logout-button').addEventListener('click', () => {
-                signOut(auth);
-                window.location.hash = '';
-            });
+            document.getElementById('logout-button').addEventListener('click', () => { signOut(auth); window.location.hash = ''; });
             document.getElementById('sidebar-toggle').addEventListener('click', () => document.getElementById('sidebar').classList.toggle('open'));
             populateNav();
         }
@@ -409,66 +384,241 @@
                         state.students = state.users.filter(u => u.role === 'student');
                     }
                     router();
+                }, (error) => {
+                    console.error(`Error listening to ${key}:`, error);
                 });
                 state.unsubscribeListeners.push(unsubscribe);
             });
         }
         
+        // --- PERMISSIONS HELPERS ---
+        function canEdit() {
+            const { role } = state.user;
+            return role === 'admin' || role === 'teacher';
+        }
+        
         // --- PAGE-SPECIFIC RENDER FUNCTIONS ---
         const routes = {
-            'myday': {
-                render: function() {
-                    const content = document.getElementById('content');
-                    content.innerHTML = `<h2>My Day</h2><p>Here is your schedule for today.</p>`;
-                }
-            },
-            'courses': {
-                render: function() {
-                    const content = document.getElementById('content');
-                     content.innerHTML = `<h2>Courses</h2><p>A list of available courses.</p>`;
-                }
-            },
-             'users': {
-                render: function() {
-                    const content = document.getElementById('content');
-                     content.innerHTML = `<h2>Users</h2><p>Manage all users for the school.</p>`;
-                }
-            },
-             'gradebook': {
-                render: function() {
-                    const content = document.getElementById('content');
-                     content.innerHTML = `<h2>Gradebook</h2><p>View grades for your courses.</p>`;
-                }
-            },
-            'calendar': {
-                render: function() {
-                    const content = document.getElementById('content');
-                    content.innerHTML = `<div id="calendar-container"></div>`;
-                    const calendarEl = document.getElementById('calendar-container');
-                    if (state.currentCalendar) state.currentCalendar.destroy();
-                    state.currentCalendar = new FullCalendar.Calendar(calendarEl, {
-                        initialView: 'dayGridMonth',
-                        events: state.events.map(e => ({ title: e.title, start: e.date })),
-                    });
-                    state.currentCalendar.render();
-                }
-            },
-             'messages': {
-                render: function() {
-                    const content = document.getElementById('content');
-                     content.innerHTML = `<h2>Messages</h2><p>Your inbox is empty.</p>`;
-                }
-            },
-             'profile': {
-                render: function() {
-                    const content = document.getElementById('content');
-                     content.innerHTML = `<h2>Profile</h2><p>Edit your profile information.</p>`;
-                }
-            },
+            'myday': { render: renderMyDay },
+            'courses': { render: renderCourses },
+            'users': { render: renderUsers },
+            'gradebook': { render: renderGradebook },
+            'calendar': { render: renderCalendar },
+            'messages': { render: renderMessages },
+            'profile': { render: renderProfile },
+            'settings': { render: renderSettings },
         };
 
-        // --- GLOBAL HELPER FUNCTIONS ---
+        function renderMyDay(params) {
+            const content = document.getElementById('content');
+             const today = new Date();
+            const dateString = today.toISOString().split('T')[0];
+            const dayOfWeek = today.toLocaleDateString('en-US', { weekday: 'long' });
+            
+            const calendarEntry = state.masterCalendar.find(d => d.id === dateString);
+            const dayType = calendarEntry ? state.dayTypes.find(dt => dt.id === calendarEntry.dayTypeId) : null;
+            
+            let html = `<div class="mb-6">
+                <h3 class="text-2xl font-bold text-slate-800">${dayOfWeek}, ${today.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</h3>
+                ${dayType ? `<p class="text-lg font-semibold text-sky-600">${dayType.name}</p>` : `<p class="text-slate-500">No schedule defined for today.</p>`}
+            </div><div class="space-y-4">`;
+
+            if (dayType) {
+                const studentScheduleEntries = state.schedules.filter(s => s.studentId === state.user.uid && s.dayTypeId === dayType.id);
+                
+                studentScheduleEntries.sort((a,b) => {
+                   const blockA = state.timeBlocks.find(tb => tb.id === a.timeBlockId);
+                   const blockB = state.timeBlocks.find(tb => tb.id === b.timeBlockId);
+                   return (blockA?.startTime || '00:00').localeCompare(blockB?.startTime || '00:00');
+                }).forEach(entry => {
+                    const course = state.courses.find(c => c.id === entry.courseId);
+                    const timeBlock = state.timeBlocks.find(tb => tb.id === entry.timeBlockId);
+                    const teacher = state.allUsers.find(u => u.uid === course?.teacherId);
+
+                    html += `<div class="p-4 bg-slate-50 border-l-4 border-indigo-500 rounded">
+                        <p class="font-bold text-lg text-indigo-700">${course?.name || 'Unknown Course'}</p>
+                        <p class="text-slate-600 font-medium">${timeBlock?.name || 'All Day'} (${timeBlock?.startTime || ''} - ${timeBlock?.endTime || ''})</p>
+                        <p class="text-sm text-slate-500">Teacher: ${teacher?.displayName || 'N/A'}</p>
+                    </div>`;
+                });
+                 if (studentScheduleEntries.length === 0) {
+                    html += `<p class="text-slate-500">You have no classes scheduled for today.</p>`;
+                }
+            }
+            html += `</div>`;
+            content.innerHTML = html;
+        }
+
+        function renderCourses() {
+            const content = document.getElementById('content');
+            const isAdmin = state.user.role === 'admin';
+            let html = `<div class="flex justify-between items-center mb-6">
+                <h3 class="text-2xl font-bold text-slate-700">Courses</h3>
+                ${isAdmin ? `<button onclick="window.openCourseModal()" class="bg-sky-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-sky-700 transition-colors">+ Add Course</button>` : ''}
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">`;
+
+            state.courses.forEach(c => {
+                 const teacher = state.allUsers.find(u => u.uid === c.teacherId);
+                html += `<div class="bg-white border rounded-lg shadow-sm p-6 hover:shadow-md transition-shadow cursor-pointer" onclick="window.location.hash='#/${state.school.slug}/gradebook?courseId=${c.id}'">
+                    <h4 class="text-xl font-bold text-indigo-700">${c.name}</h4>
+                    <p class="text-slate-600">Teacher: ${teacher?.displayName || 'N/A'}</p>
+                </div>`;
+            });
+            html += `</div>`;
+            content.innerHTML = html;
+        }
+        
+        function renderUsers() {
+            const content = document.getElementById('content');
+            let html = `<div class="flex justify-between items-center mb-6">
+                <h3 class="text-2xl font-bold text-slate-700">User Management</h3>
+                <button onclick="window.openUserModal()" class="bg-sky-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-sky-700 transition-colors">+ Add User</button>
+            </div>
+            <div class="overflow-x-auto"><table class="w-full text-left">
+                <thead><tr class="bg-slate-100 text-slate-600 uppercase text-sm">
+                    <th class="py-3 px-4">Name</th><th class="py-3 px-4">Email</th><th class="py-3 px-4">Role</th>
+                    <th class="py-3 px-4 text-right">Actions</th>
+                </tr></thead><tbody>`;
+            
+            state.allUsers.forEach(u => {
+                html += `<tr class="border-b border-slate-200 hover:bg-slate-50">
+                    <td class="py-3 px-4 font-medium text-slate-800">${u.displayName}</td>
+                    <td class="py-3 px-4 text-slate-600">${u.email}</td>
+                    <td class="py-3 px-4 text-slate-600 capitalize">${u.role}</td>
+                    <td class="py-3 px-4 text-right">
+                        <button onclick="window.openUserModal('${u.uid}')" class="text-indigo-600 hover:text-indigo-800 font-semibold mr-4">Edit</button>
+                    </td>
+                </tr>`;
+            });
+
+            html += `</tbody></table></div>`;
+            content.innerHTML = html;
+        }
+
+        function renderGradebook(params) {
+            const content = document.getElementById('content');
+            const courseId = params.get('courseId');
+            if (!courseId) {
+                content.innerHTML = `<p class="text-slate-500">Please select a course from the Courses page to view its gradebook.</p>`;
+                return;
+            }
+
+            const course = state.courses.find(c => c.id === courseId);
+            const assignments = state.assignments.filter(a => a.courseId === courseId);
+            const courseGrades = state.grades.filter(g => assignments.some(a => a.id === g.assignmentId));
+
+            let visibleStudents = state.students;
+            if (state.user.role === 'parent') {
+                visibleStudents = state.students.filter(s => state.user.linkedStudentIds?.includes(s.uid));
+            } else if (state.user.role === 'student') {
+                visibleStudents = state.students.filter(s => s.uid === state.user.uid);
+            }
+            
+            let html = `<div class="flex justify-between items-center mb-6">
+                <h3 class="text-2xl font-bold text-slate-700">Gradebook: ${course?.name || ''}</h3>
+                ${canEdit() ? `<button onclick="window.openAssignmentModal('${courseId}')" class="bg-sky-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-sky-700 transition-colors">+ Add Assignment</button>` : ''}
+            </div>
+            <div class="overflow-x-auto"><table class="w-full text-left gradebook-table">
+                <thead><tr class="bg-slate-100 text-slate-600 uppercase text-sm">
+                    <th class="py-3 px-4">Student</th>`;
+            
+            assignments.forEach(a => { html += `<th class="py-3 px-4 text-center">${a.title}<br><span class="font-normal normal-case">(${a.totalPoints} pts)</span></th>`; });
+            html += `<th class="py-3 px-4 text-center font-bold">Final Grade</th></tr></thead><tbody>`;
+
+            visibleStudents.forEach(student => {
+                let totalPointsEarned = 0, totalPointsPossible = 0;
+                html += `<tr class="border-b border-slate-200 hover:bg-slate-50"><td class="py-3 px-4 font-medium">${student.displayName}</td>`;
+                assignments.forEach(a => {
+                    const grade = courseGrades.find(g => g.studentId === student.uid && g.assignmentId === a.id);
+                    const score = grade ? grade.score : '';
+                    if(grade) {
+                        totalPointsEarned += parseFloat(grade.score);
+                        totalPointsPossible += parseFloat(a.totalPoints);
+                    }
+                    html += `<td class="py-3 px-4 text-center">
+                        <input type="number" value="${score}" onchange="window.updateGrade('${student.uid}', '${a.id}', this.value, ${a.totalPoints})" 
+                               class="w-20 p-1 border rounded text-center" placeholder="--" ${!canEdit() ? 'disabled' : ''}>
+                    </td>`;
+                });
+                const finalGrade = totalPointsPossible > 0 ? ((totalPointsEarned / totalPointsPossible) * 100).toFixed(1) : 'N/A';
+                html += `<td class="py-3 px-4 text-center font-bold">${finalGrade}%</td></tr>`;
+            });
+            html += `</tbody></table></div>`;
+            content.innerHTML = html;
+        }
+        
+        function renderCalendar() {
+             const content = document.getElementById('content');
+             const isAdmin = state.user.role === 'admin';
+            content.innerHTML = `<div class="flex justify-between items-center mb-6">
+                <h3 class="text-2xl font-bold text-slate-700">School Calendar</h3>
+                ${isAdmin ? `<button onclick="window.openEventModal()" class="bg-sky-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-sky-700 transition-colors">+ Add Event</button>` : ''}
+            </div>
+            <div id="calendar-container"></div>`;
+
+            const calendarEl = document.getElementById('calendar-container');
+            if (state.currentCalendar) state.currentCalendar.destroy();
+            state.currentCalendar = new FullCalendar.Calendar(calendarEl, {
+                initialView: 'dayGridMonth',
+                headerToolbar: { left: 'prev,next today', center: 'title', right: 'dayGridMonth,listWeek' },
+                events: state.events.map(e => ({ title: e.title, start: e.date })),
+            });
+            state.currentCalendar.render();
+        }
+
+        function renderMessages() {
+            const content = document.getElementById('content');
+             content.innerHTML = `<h2>Messages</h2><p>This feature is in development.</p>`;
+        }
+        
+        function renderProfile() {
+            const content = document.getElementById('content');
+            const user = state.user;
+            content.innerHTML = `
+                <h3 class="text-2xl font-bold text-slate-700 mb-6">Your Profile</h3>
+                <div class="bg-slate-50 p-6 rounded-lg border max-w-2xl">
+                    <form id="profile-form" onsubmit="window.handleProfileUpdate(event)">
+                        <div class="mb-4">
+                            <label class="block text-slate-700 font-bold mb-2">Display Name</label>
+                            <input type="text" value="${user.displayName || ''}" class="w-full p-2 border rounded bg-slate-200" readonly>
+                        </div>
+                         <div class="mb-4">
+                            <label class="block text-slate-700 font-bold mb-2">Email</label>
+                            <input type="email" value="${user.email || ''}" class="w-full p-2 border rounded bg-slate-200" readonly>
+                        </div>
+                         <div class="mb-4">
+                            <label class="block text-slate-700 font-bold mb-2">Role</label>
+                            <input type="text" value="${user.role || ''}" class="w-full p-2 border rounded bg-slate-200 capitalize" readonly>
+                        </div>
+                        <div class="mb-4">
+                            <label class="block text-slate-700 font-bold mb-2" for="profile-phone">Phone Number</label>
+                            <input type="tel" id="profile-phone" value="${user.phone || ''}" class="w-full p-2 border rounded" placeholder="Your contact number">
+                        </div>
+                        <div class="mb-4">
+                            <label class="block text-slate-700 font-bold mb-2" for="profile-address">Address</label>
+                            <textarea id="profile-address" class="w-full p-2 border rounded" placeholder="Your home address">${user.address || ''}</textarea>
+                        </div>
+                        <button type="submit" class="w-full bg-green-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-green-700">Update Profile</button>
+                    </form>
+                </div>
+            `;
+        }
+
+        function renderSettings() {
+             const content = document.getElementById('content');
+             content.innerHTML = `<h2>Settings</h2><p>Manage school-wide settings.</p>`;
+        }
+
+
+        // --- GLOBAL HELPER & CRUD FUNCTIONS ---
         window.closeModal = () => document.getElementById('modal-template').classList.add('hidden');
+        window.openModal = (title, body) => {
+            document.getElementById('modal-title').innerText = title;
+            document.getElementById('modal-body').innerHTML = body;
+            document.getElementById('modal-template').classList.remove('hidden');
+            document.getElementById('modal-template').classList.add('flex');
+        };
         window.showToast = (message, type = 'success') => {
             const container = document.getElementById('toast-container');
             const toast = document.createElement('div');
@@ -482,7 +632,137 @@
                 toast.addEventListener('transitionend', () => toast.remove());
             }, 3000);
         };
+
+        window.openUserModal = (userId = null) => {
+            const user = userId ? state.allUsers.find(u => u.uid === userId) : null;
+            const title = user ? 'Edit User' : 'Add New User';
+            const studentsOptions = state.students.map(s => `<option value="${s.uid}" ${user?.linkedStudentIds?.includes(s.uid) ? 'selected' : ''}>${s.displayName}</option>`).join('');
+            const body = `<form id="user-form" onsubmit="window.handleUserFormSubmit(event, '${userId || ''}')">
+                <p class="text-sm bg-yellow-100 text-yellow-800 p-3 rounded-lg mb-4">Note: New users must be created via the School Registration page or another secure backend process. This form is for editing existing users.</p>
+                <input type="text" id="user-name" placeholder="Full Name" required value="${user?.displayName || ''}" class="w-full p-2 border rounded mb-4">
+                <input type="email" id="user-email" placeholder="Email Address" required value="${user?.email || ''}" class="w-full p-2 border rounded mb-4 bg-slate-100" readonly>
+                <select id="user-role" class="w-full p-2 border rounded mb-4" onchange="this.value === 'parent' ? document.getElementById('student-link-container').classList.remove('hidden') : document.getElementById('student-link-container').classList.add('hidden')">
+                    <option value="student" ${user?.role === 'student' ? 'selected' : ''}>Student</option>
+                    <option value="teacher" ${user?.role === 'teacher' ? 'selected' : ''}>Teacher</option>
+                    <option value="parent" ${user?.role === 'parent' ? 'selected' : ''}>Parent</option>
+                    <option value="admin" ${user?.role === 'admin' ? 'selected' : ''}>Admin</option>
+                </select>
+                <div id="student-link-container" class="${user?.role === 'parent' ? '' : 'hidden'}">
+                    <label class="block mb-2 font-semibold">Link to Student(s):</label>
+                    <select id="linked-students" multiple class="w-full p-2 border rounded mb-4 h-32">${studentsOptions}</select>
+                </div>
+                <button type="submit" class="w-full bg-green-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-green-700">Save User</button>
+            </form>`;
+            openModal(title, body);
+        };
+
+        window.handleUserFormSubmit = async (event, userId) => {
+            event.preventDefault();
+            if (!userId) { return showToast('User creation must be handled via a secure backend.', 'error'); }
+            
+            const role = document.getElementById('user-role').value;
+            const userData = {
+                displayName: document.getElementById('user-name').value,
+                email: document.getElementById('user-email').value,
+                role: role,
+                linkedStudentIds: role === 'parent' ? Array.from(document.getElementById('linked-students').selectedOptions).map(opt => opt.value) : [],
+            };
+
+            try {
+                await updateDoc(doc(db, 'schools', state.school.id, 'users', userId), userData);
+                showToast('User updated!');
+                closeModal();
+            } catch (error) { showToast(`Error: ${error.message}`, 'error'); }
+        };
+
+        window.openCourseModal = (courseId = null) => {
+            // ... Full implementation for course modal
+        };
+
+        window.handleCourseFormSubmit = async (event, courseId) => {
+            // ... Full implementation for course form submit
+        };
         
+        window.openAssignmentModal = (courseId) => {
+             const body = `<form onsubmit="window.handleAssignmentSubmit(event, '${courseId}')">
+                <input type="text" id="assignment-title" placeholder="Assignment Title" class="w-full p-2 border rounded mb-4" required>
+                <input type="date" id="assignment-due-date" value="${new Date().toISOString().split('T')[0]}" class="w-full p-2 border rounded mb-4" required>
+                <input type="number" id="assignment-points" placeholder="Total Points" class="w-full p-2 border rounded mb-6" required min="1">
+                <button type="submit" class="w-full bg-green-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-green-700">Save Assignment</button>
+            </form>`;
+            openModal('Add Assignment', body);
+        };
+
+        window.handleAssignmentSubmit = async (event, courseId) => {
+             event.preventDefault();
+            const assignmentData = {
+                courseId: courseId,
+                title: document.getElementById('assignment-title').value,
+                dueDate: document.getElementById('assignment-due-date').value,
+                totalPoints: parseInt(document.getElementById('assignment-points').value)
+            };
+            try {
+                await addDoc(collection(db, 'schools', state.school.id, 'assignments'), assignmentData);
+                showToast('Assignment added!');
+                closeModal();
+            } catch(e) { showToast('Failed to add assignment.', 'error'); }
+        };
+
+        window.updateGrade = async (studentId, assignmentId, newScore, totalPoints) => {
+            const score = parseFloat(newScore);
+            if (newScore !== '' && (isNaN(score) || score < 0 || score > totalPoints)) {
+                showToast(`Score must be between 0 and ${totalPoints}.`, "error");
+                router(); return;
+            }
+            try {
+                const q = query(collection(db, 'schools', state.school.id, 'grades'), where("studentId", "==", studentId), where("assignmentId", "==", assignmentId));
+                const snapshot = await getDocs(q);
+                if (newScore === '') {
+                    if (!snapshot.empty) await deleteDoc(snapshot.docs[0].ref);
+                } else {
+                    const gradeData = { studentId, assignmentId, score, totalPoints };
+                    if (snapshot.empty) await addDoc(collection(db, 'schools', state.school.id, 'grades'), gradeData);
+                    else await updateDoc(snapshot.docs[0].ref, gradeData);
+                }
+            } catch(e) { showToast('Failed to update grade.', 'error'); }
+        };
+        
+        window.openEventModal = () => {
+             const body = `<form onsubmit="window.handleEventSubmit(event)">
+                <label class="block mb-2 font-semibold">Event Title:</label>
+                <input type="text" id="event-title" class="w-full p-2 border rounded mb-4" required>
+                <label class="block mb-2 font-semibold">Date:</label>
+                <input type="date" id="event-date" class="w-full p-2 border rounded mb-4" value="${new Date().toISOString().split('T')[0]}" required>
+                <button type="submit" class="w-full bg-green-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-green-700">Save Event</button>
+            </form>`;
+            openModal("Add Calendar Event", body);
+        };
+
+        window.handleEventSubmit = async (event) => {
+            event.preventDefault();
+            const eventData = {
+                title: document.getElementById('event-title').value,
+                date: document.getElementById('event-date').value,
+            };
+            try {
+                await addDoc(collection(db, 'schools', state.school.id, 'events'), eventData);
+                showToast("Event added!");
+                closeModal();
+            } catch(e) { showToast("Failed to save event.", "error"); }
+        };
+
+        window.handleProfileUpdate = async (event) => {
+            event.preventDefault();
+            const profileData = {
+                phone: document.getElementById('profile-phone').value,
+                address: document.getElementById('profile-address').value
+            };
+            try {
+                await updateDoc(doc(db, 'schools', state.school.id, 'users', state.user.uid), profileData);
+                showToast("Profile updated!");
+            } catch (e) { showToast("Failed to update profile.", "error");}
+        };
+
         // Initialize
         router();
     </script>
