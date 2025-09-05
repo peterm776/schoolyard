@@ -85,22 +85,10 @@
 
         // --- GLOBAL APP STATE ---
         const state = {
-            user: null,
-            school: null,
-            allUsers: [],
-            students: [],
-            courses: [],
-            dayTypes: [],
-            timeBlocks: [],
-            masterCalendar: [],
-            schedules: [],
-            assignments: [],
-            grades: [],
-            attendance: [],
-            events: [],
-            messages: [],
-            unsubscribeListeners: [],
-            currentCalendar: null,
+            user: null, school: null, allUsers: [], students: [], courses: [],
+            dayTypes: [], timeBlocks: [], masterCalendar: [], schedules: [],
+            assignments: [], grades: [], attendance: [], events: [], messages: [],
+            unsubscribeListeners: [], currentCalendar: null,
         };
 
         // --- ROLE-BASED NAVIGATION ---
@@ -126,7 +114,7 @@
             authView: `
                 <div class="h-screen w-screen flex flex-col items-center justify-center bg-slate-100 p-4" style="background-image: url('https://placehold.co/1200x800/e0e7ff/6366f1?text=Schoolyard'); background-size: cover; background-position: center;">
                     <div id="view-container" class="bg-white/80 backdrop-blur-sm p-8 rounded-2xl shadow-2xl text-center max-w-sm w-full">
-                        <!-- Content will be injected by renderAuthView -->
+                        <!-- Auth content will be injected -->
                     </div>
                 </div>`,
             appView: `
@@ -152,8 +140,7 @@
                                     </button>
                                 </div>
                             </div>
-                             <div id="secondary-nav" class="mb-6 border-b"></div>
-                            <div id="content" class="bg-white rounded-xl shadow-md p-6"></div>
+                            <div id="content" class="bg-white rounded-xl shadow-md p-6 min-h-[calc(100vh-150px)]"></div>
                         </div>
                     </main>
                 </div>`
@@ -162,20 +149,14 @@
         // --- AUTHENTICATION & ROUTER ---
 
         onAuthStateChanged(auth, async (user) => {
-            if (user) {
-                await handleLogin(user);
-            } else {
-                handleLogout();
-            }
-            router(); // Always re-route on auth change
+            if (user) await handleLogin(user);
+            else handleLogout();
+            router();
         });
         
         async function handleLogin(user) {
-            const [schoolSlug, page] = getRoute();
-            if (!schoolSlug) {
-                // Should not happen if already logged in, but as a safeguard.
-                return;
-            }
+            const [schoolSlug] = getRoute();
+            if (!schoolSlug) return;
 
             const school = await getSchoolBySlug(schoolSlug);
             if (!school) {
@@ -183,12 +164,26 @@
                 return signOut(auth);
             }
             state.school = school;
+            
+            // Check for and claim placeholder admin account on first login
+            const placeholderQuery = query(collection(db, 'schools', school.id, 'users'), where('email', '==', user.email), where('isPlaceholder', '==', true));
+            const placeholderSnapshot = await getDocs(placeholderQuery);
+            
+            if (!placeholderSnapshot.empty) {
+                const placeholderDoc = placeholderSnapshot.docs[0];
+                await setDoc(doc(db, 'schools', school.id, 'users', user.uid), {
+                    displayName: user.displayName,
+                    email: user.email,
+                    role: placeholderDoc.data().role,
+                });
+                await deleteDoc(placeholderDoc.ref);
+                showToast('Administrator account activated!', 'success');
+            }
 
             const userRef = doc(db, 'schools', school.id, 'users', user.uid);
             const userDoc = await getDoc(userRef);
 
             if (!userDoc.exists()) {
-                // This user is not part of this school.
                 showToast('This account is not registered with this school.', 'error');
                 return signOut(auth);
             }
@@ -200,14 +195,8 @@
 
         function handleLogout() {
             Object.keys(state).forEach(key => {
-                if (key === 'unsubscribeListeners') {
-                    state[key].forEach(unsub => unsub());
-                    state[key] = [];
-                } else if (Array.isArray(state[key])) {
-                    state[key] = [];
-                } else {
-                    state[key] = null;
-                }
+                if (key === 'unsubscribeListeners') state[key].forEach(unsub => unsub());
+                state[key] = Array.isArray(state[key]) ? [] : null;
             });
         }
         
@@ -215,8 +204,9 @@
 
         function getRoute() {
             const hash = window.location.hash.replace('#/', '');
-            const [schoolSlug, page, ...rest] = hash.split('/');
-            return [schoolSlug, page || 'myday', rest];
+            const [part1, part2] = hash.split('/');
+            if (part1 === 'signup') return ['signup', null];
+            return [part1 || null, part2 || 'myday'];
         }
 
         async function router() {
@@ -224,13 +214,11 @@
             const [schoolSlug, page] = getRoute();
 
             if (state.user && state.school) {
-                // User is logged in and school context is known
                 outlet.innerHTML = templates.appView;
                 renderAppShell();
                 const renderFunction = routes[page]?.render;
-                if(renderFunction) renderFunction(); else routes['myday'].render();
+                if (renderFunction) renderFunction(); else routes['myday'].render();
             } else {
-                // User is logged out
                 outlet.innerHTML = templates.authView;
                 renderAuthView(schoolSlug);
             }
@@ -240,22 +228,20 @@
 
         function renderAuthView(schoolSlug) {
             const container = document.getElementById('view-container');
-            if (schoolSlug) {
-                renderLoginView(schoolSlug, container);
-            } else {
-                renderSchoolFinderView(container);
-            }
+            if (schoolSlug === 'signup') renderSignupView(container);
+            else if (schoolSlug) renderLoginView(schoolSlug, container);
+            else renderSchoolFinderView(container);
         }
         
         async function renderLoginView(schoolSlug, container) {
             const school = await getSchoolBySlug(schoolSlug);
             if (!school) {
                 container.innerHTML = `<h2 class="text-2xl font-bold text-red-600 mb-4">School Not Found</h2>
-                <p class="text-slate-600 mb-6">The school identifier "${schoolSlug}" does not exist. Please check the URL and try again.</p>
+                <p class="text-slate-600 mb-6">The URL slug "${schoolSlug}" does not exist.</p>
                 <a href="#" class="text-sky-600 font-semibold hover:underline">Find your school</a>`;
                 return;
             }
-            state.school = school; // Set temporary school context
+            state.school = school;
             container.innerHTML = `
                 <h1 class="text-3xl font-bold text-slate-800 mb-2">${school.name}</h1>
                 <p class="text-slate-600 mb-8">Please sign in to continue.</p>
@@ -287,22 +273,96 @@
                 if(slug) window.location.hash = `#/${slug}`;
             });
         }
+
+        function renderSignupView(container) {
+             container.innerHTML = `
+                <h1 class="text-3xl font-bold text-slate-800 mb-2">Register Your School</h1>
+                <p class="text-slate-600 mb-8">Create your school's private instance on Schoolyard.</p>
+                <form id="school-signup-form" class="text-left">
+                    <label class="font-semibold text-slate-700">School Name</label>
+                    <input id="signup-school-name" type="text" placeholder="e.g., St. Joseph's Prep" class="w-full p-2 border rounded-lg mb-4" required>
+                    <label class="font-semibold text-slate-700">School URL</label>
+                    <div class="flex items-center mb-4">
+                        <span class="text-slate-500 p-2 bg-slate-200 border rounded-l-lg">.../#/</span>
+                        <input id="signup-school-slug" type="text" placeholder="stjosephsprep" class="w-full p-2 border-t border-b border-r rounded-r-lg" required>
+                    </div>
+                    <hr class="my-6">
+                    <h2 class="text-xl font-bold text-slate-800 mb-2">Administrator Account</h2>
+                    <p class="text-slate-600 mb-4 text-sm">This will be the first account for your school, with full permissions.</p>
+                    <label class="font-semibold text-slate-700">Your Full Name</label>
+                    <input id="signup-admin-name" type="text" placeholder="Peter Massaua" class="w-full p-2 border rounded-lg mb-4" required>
+                    <label class="font-semibold text-slate-700">Your Email Address</label>
+                    <input id="signup-admin-email" type="email" placeholder="peter.massaua@example.com" class="w-full p-2 border rounded-lg mb-6" required>
+                    <button type="submit" class="w-full bg-green-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-green-700">Create School</button>
+                    <p class="text-sm text-slate-500 mt-8 text-center">Already have a school? <a href="#" class="text-sky-600 font-semibold hover:underline">Find your school.</a></p>
+                </form>
+            `;
+            document.getElementById('school-signup-form').addEventListener('submit', handleSchoolSignup);
+        }
+
+        async function handleSchoolSignup(e) {
+            e.preventDefault();
+            const schoolName = document.getElementById('signup-school-name').value;
+            const schoolSlug = document.getElementById('signup-school-slug').value.toLowerCase().trim();
+            const adminName = document.getElementById('signup-admin-name').value;
+            const adminEmail = document.getElementById('signup-admin-email').value;
+
+            if (!schoolSlug.match(/^[a-z0-9-]+$/)) {
+                return showToast('URL can only contain letters, numbers, and hyphens.', 'error');
+            }
+
+            const existingSchool = await getSchoolBySlug(schoolSlug);
+            if (existingSchool) {
+                return showToast('This school URL is already taken.', 'error');
+            }
+
+            try {
+                const schoolRef = await addDoc(collection(db, 'schools'), {
+                    name: schoolName, slug: schoolSlug, createdAt: serverTimestamp()
+                });
+                
+                const q = query(collectionGroup(db, 'users'), where('email', '==', adminEmail));
+                const existingUsers = await getDocs(q);
+                if (!existingUsers.empty) {
+                    // This is a simplification. A real app would need a more robust check.
+                    showToast('An admin with this email already exists in another school.', 'error');
+                    await deleteDoc(doc(db, 'schools', schoolRef.id)); // Rollback
+                    return;
+                }
+
+                await setDoc(doc(db, 'schools', schoolRef.id, 'users', 'placeholder_admin'), {
+                    displayName: adminName, email: adminEmail, role: 'admin', isPlaceholder: true
+                });
+
+                document.getElementById('view-container').innerHTML = `
+                    <h1 class="text-2xl font-bold text-green-600 mb-4">School Created!</h1>
+                    <p class="text-slate-700 mb-2">Your school, <strong>${schoolName}</strong>, is ready.</p>
+                    <p class="text-slate-600 mb-6">To finish setup, the administrator (<strong>${adminEmail}</strong>) must sign in for the first time using Google.</p>
+                    <a href="#/${schoolSlug}" class="w-full bg-sky-500 text-white font-bold py-3 px-4 rounded-lg hover:bg-sky-600 inline-block">Go to Your School's Login Page</a>
+                `;
+
+            } catch (error) {
+                console.error("Error creating school:", error);
+                showToast('Could not create school. Please try again.', 'error');
+            }
+        }
         
         // --- APP VIEW RENDER LOGIC ---
 
         function renderAppShell() {
             document.getElementById('sidebar-school-name').textContent = state.school.name;
             document.getElementById('user-info').innerHTML = `<p class="font-semibold text-slate-800">${state.user.displayName}</p><p class="text-xs text-slate-500 capitalize">${state.user.role}</p>`;
-            document.getElementById('logout-button').addEventListener('click', () => signOut(auth));
+            document.getElementById('logout-button').addEventListener('click', () => {
+                signOut(auth);
+                window.location.hash = '';
+            });
             document.getElementById('sidebar-toggle').addEventListener('click', () => document.getElementById('sidebar').classList.toggle('open'));
             populateNav();
         }
 
         function populateNav() {
             const navEl = document.getElementById('nav');
-            if (!state.user || !state.user.role) {
-                navEl.innerHTML = ''; return;
-            }
+            if (!state.user || !state.user.role) { navEl.innerHTML = ''; return; }
             const [schoolSlug, page] = getRoute();
             const allowedLinks = rolesConfig[state.user.role] || [];
             navEl.innerHTML = allowedLinks.map(linkKey => {
@@ -317,6 +377,7 @@
         // --- DATA FETCHING & MANAGEMENT ---
 
         async function getSchoolBySlug(slug) {
+            if(!slug) return null;
             const q = query(collection(db, 'schools'), where('slug', '==', slug));
             const snapshot = await getDocs(q);
             if (snapshot.empty) return null;
@@ -337,7 +398,7 @@
         }
 
         function setupRealtimeListeners() {
-            handleLogout(); // Clear existing listeners first
+            handleLogout(); // Clear existing listeners
             const collectionsToListen = ['users', 'courses', 'dayTypes', 'timeBlocks', 'masterCalendar', 'schedules', 'assignments', 'grades', 'attendance', 'events', 'messages'];
             collectionsToListen.forEach(key => {
                 const q = query(collection(db, 'schools', state.school.id, key));
@@ -347,7 +408,6 @@
                         state.allUsers = state.users;
                         state.students = state.users.filter(u => u.role === 'student');
                     }
-                    // Debounced router might be better here if updates are frequent
                     router();
                 });
                 state.unsubscribeListeners.push(unsubscribe);
@@ -355,83 +415,60 @@
         }
         
         // --- PAGE-SPECIFIC RENDER FUNCTIONS ---
-        
         const routes = {
             'myday': {
                 render: function() {
                     const content = document.getElementById('content');
-                    const today = new Date();
-                    const dateString = today.toISOString().split('T')[0];
-                    const dayOfWeek = today.toLocaleDateString('en-US', { weekday: 'long' });
-                    
-                    const calendarEntry = state.masterCalendar.find(d => d.id === dateString);
-                    const dayType = calendarEntry ? state.dayTypes.find(dt => dt.id === calendarEntry.dayTypeId) : null;
-                    
-                    let html = `<div class="mb-4">
-                        <h3 class="text-2xl font-bold text-slate-800">${dayOfWeek}, ${today.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</h3>
-                        ${dayType ? `<p class="text-lg font-semibold text-sky-600">${dayType.name}</p>` : `<p class="text-slate-500">No schedule defined for today.</p>`}
-                    </div><div class="space-y-4">`;
-
-                    if (dayType) {
-                        const studentScheduleEntries = state.schedules.filter(s => s.studentId === state.user.uid && s.dayTypeId === dayType.id);
-                        
-                        studentScheduleEntries.sort((a,b) => {
-                           const blockA = state.timeBlocks.find(tb => tb.id === a.timeBlockId);
-                           const blockB = state.timeBlocks.find(tb => tb.id === b.timeBlockId);
-                           return (blockA?.startTime || '00:00').localeCompare(blockB?.startTime || '00:00');
-                        }).forEach(entry => {
-                            const course = state.courses.find(c => c.id === entry.courseId);
-                            const timeBlock = state.timeBlocks.find(tb => tb.id === entry.timeBlockId);
-                            const teacher = state.allUsers.find(u => u.uid === course?.teacherId);
-
-                            html += `<div class="p-4 bg-slate-50 border-l-4 border-indigo-500 rounded">
-                                <p class="font-bold text-lg text-indigo-700">${course?.name || 'Unknown Course'}</p>
-                                <p class="text-slate-600 font-medium">${timeBlock?.name || 'All Day'} (${timeBlock?.startTime || ''} - ${timeBlock?.endTime || ''})</p>
-                                <p class="text-sm text-slate-500">Teacher: ${teacher?.displayName || 'N/A'}</p>
-                            </div>`;
-                        });
-                    }
-                    html += `</div>`;
-                    content.innerHTML = html;
+                    content.innerHTML = `<h2>My Day</h2><p>Here is your schedule for today.</p>`;
+                }
+            },
+            'courses': {
+                render: function() {
+                    const content = document.getElementById('content');
+                     content.innerHTML = `<h2>Courses</h2><p>A list of available courses.</p>`;
+                }
+            },
+             'users': {
+                render: function() {
+                    const content = document.getElementById('content');
+                     content.innerHTML = `<h2>Users</h2><p>Manage all users for the school.</p>`;
+                }
+            },
+             'gradebook': {
+                render: function() {
+                    const content = document.getElementById('content');
+                     content.innerHTML = `<h2>Gradebook</h2><p>View grades for your courses.</p>`;
                 }
             },
             'calendar': {
                 render: function() {
-                    const isAdmin = state.user.role === 'admin';
-                    let content = `<div class="flex justify-between items-center mb-6">
-                        <h3 class="text-2xl font-bold text-slate-700">School Calendar</h3>
-                        ${isAdmin ? `<button onclick="window.openEventModal()" class="bg-sky-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-sky-700 transition-colors">+ Add Event</button>` : ''}
-                    </div>
-                    <div id="calendar-container"></div>`;
-                    document.getElementById('content').innerHTML = content;
-
+                    const content = document.getElementById('content');
+                    content.innerHTML = `<div id="calendar-container"></div>`;
                     const calendarEl = document.getElementById('calendar-container');
-                    const calendarEvents = state.events.map(event => ({
-                        id: event.id,
-                        title: event.title,
-                        start: event.date,
-                        allDay: true,
-                    }));
-                    
-                    if(state.currentCalendar) state.currentCalendar.destroy();
-
+                    if (state.currentCalendar) state.currentCalendar.destroy();
                     state.currentCalendar = new FullCalendar.Calendar(calendarEl, {
                         initialView: 'dayGridMonth',
-                        headerToolbar: { left: 'prev,next today', center: 'title', right: 'dayGridMonth,timeGridWeek,listWeek' },
-                        events: calendarEvents,
+                        events: state.events.map(e => ({ title: e.title, start: e.date })),
                     });
-
                     state.currentCalendar.render();
                 }
-            }
-            // Other routes would be added here...
-        }
-
-        // --- GLOBAL HELPER FUNCTIONS ---
-        window.closeModal = () => {
-            document.getElementById('modal-template').classList.add('hidden');
+            },
+             'messages': {
+                render: function() {
+                    const content = document.getElementById('content');
+                     content.innerHTML = `<h2>Messages</h2><p>Your inbox is empty.</p>`;
+                }
+            },
+             'profile': {
+                render: function() {
+                    const content = document.getElementById('content');
+                     content.innerHTML = `<h2>Profile</h2><p>Edit your profile information.</p>`;
+                }
+            },
         };
 
+        // --- GLOBAL HELPER FUNCTIONS ---
+        window.closeModal = () => document.getElementById('modal-template').classList.add('hidden');
         window.showToast = (message, type = 'success') => {
             const container = document.getElementById('toast-container');
             const toast = document.createElement('div');
@@ -439,15 +476,14 @@
             toast.className = `toast ${bgColor} text-white font-bold py-2 px-4 rounded-lg shadow-lg mb-2 opacity-0 transform translate-y-2`;
             toast.textContent = message;
             container.appendChild(toast);
-
             setTimeout(() => { toast.classList.remove('opacity-0', 'translate-y-2'); }, 100);
             setTimeout(() => {
                 toast.classList.add('opacity-0');
                 toast.addEventListener('transitionend', () => toast.remove());
             }, 3000);
         };
-
-        // Initialize the router
+        
+        // Initialize
         router();
     </script>
 </body>
