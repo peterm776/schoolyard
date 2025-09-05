@@ -394,15 +394,18 @@
             collectionsToListen.forEach(key => {
                 const q = query(collection(db, 'schools', state.school.id, key));
                 const unsubscribe = onSnapshot(q, (snapshot) => {
-                    console.log(`Data changed in: ${key}`);
-                    state[key] = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                    if(key === 'users') {
-                        state.allUsers = state.users;
-                        state.students = state.users.filter(u => u.role === 'student');
-                        state.teachers = state.users.filter(u => u.role === 'teacher');
+                    const hasChanges = snapshot.docChanges().length > 0;
+                    if (state.user && hasChanges) { // Only update and re-render if there are actual changes
+                        console.log(`Data changed in: ${key}`);
+                        state[key] = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                        if(key === 'users') {
+                            state.allUsers = state.users;
+                            state.students = state.users.filter(u => u.role === 'student');
+                            state.teachers = state.users.filter(u => u.role === 'teacher');
+                        }
+                        // Re-render the current page to reflect changes
+                        router();
                     }
-                    // Re-render the current page to reflect changes
-                    router();
                 }, (error) => console.error(`Error listening to ${key}:`, error));
                 state.unsubscribeListeners.push(unsubscribe);
             });
@@ -433,12 +436,95 @@
         
         function renderMyDay() {
             setPageTitle('My Day');
-            // ... Full implementation for My Day page
             const content = document.getElementById('content');
-             content.innerHTML = `<div class="text-center p-8">
-                <h3 class="text-2xl font-bold text-slate-800">Welcome back, ${state.user.displayName.split(' ')[0]}!</h3>
-                <p class="text-slate-500 mt-2">This is your dashboard. You can see your schedule, upcoming assignments, and recent announcements here.</p>
-             </div>`
+            const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
+            const todaysCalendarEntry = state.masterCalendar.find(entry => entry.date === today);
+            
+            let html = `<div class="grid grid-cols-1 lg:grid-cols-3 gap-6">`;
+            
+            // Column 1: Today's Schedule
+            html += `<div class="lg:col-span-1 bg-slate-50 p-4 rounded-lg">
+                        <h3 class="text-xl font-bold text-slate-700 mb-4">Today's Schedule</h3>`;
+            if (todaysCalendarEntry) {
+                const dayType = state.dayTypes.find(dt => dt.id === todaysCalendarEntry.dayTypeId);
+                html += `<p class="mb-4 font-semibold text-sky-600">It's a ${dayType?.name || 'day off'}.</p>`;
+                const userSchedule = state.schedules.find(s => s.studentId === state.user.id);
+                if (userSchedule && dayType && userSchedule.schedule[dayType.id]) {
+                     html += `<ul class="space-y-3">`;
+                     state.timeBlocks.sort((a,b) => a.startTime.localeCompare(b.startTime)).forEach(block => {
+                         const courseId = userSchedule.schedule[dayType.id][block.id];
+                         if (courseId) {
+                             const course = state.courses.find(c => c.id === courseId);
+                             const teacher = state.allUsers.find(u => u.id === course?.teacherId);
+                             html += `<li class="p-3 bg-white rounded-md shadow-sm">
+                                <p class="font-bold text-slate-800">${course?.name || 'Unknown Course'}</p>
+                                <p class="text-sm text-slate-500">${block.startTime} - ${block.endTime}</p>
+                                <p class="text-sm text-slate-600">Teacher: ${teacher?.displayName || 'N/A'}</p>
+                              </li>`;
+                         }
+                     });
+                     html += `</ul>`;
+                } else if (state.user.role === 'student' || state.user.role === 'parent') {
+                     html += `<p class="text-slate-500">No schedule found for today.</p>`;
+                } else {
+                     html += `<p class="text-slate-500">View teaching schedule on your course pages.</p>`;
+                }
+            } else {
+                html += `<p class="text-slate-500">No school day scheduled for today.</p>`;
+            }
+            html += `</div>`;
+            
+            // Column 2 & 3: Upcoming Assignments & Announcements
+            html += `<div class="lg:col-span-2 space-y-6">
+                        <div class="bg-slate-50 p-4 rounded-lg">
+                            <h3 class="text-xl font-bold text-slate-700 mb-4">Upcoming Assignments</h3>`;
+            const myCourses = state.user.role === 'admin' ? state.courses : state.courses.filter(c => c.studentIds?.includes(state.user.id) || c.teacherId === state.user.id);
+            const myCourseIds = myCourses.map(c => c.id);
+            const upcomingAssignments = state.assignments
+                .filter(a => myCourseIds.includes(a.courseId) && new Date(a.dueDate) >= new Date())
+                .sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate));
+            
+            if (upcomingAssignments.length > 0) {
+                 html += `<ul class="space-y-2">`;
+                 upcomingAssignments.slice(0, 5).forEach(assign => {
+                     const course = state.courses.find(c => c.id === assign.courseId);
+                     html += `<li class="p-3 bg-white rounded-md shadow-sm flex justify-between items-center">
+                                <div>
+                                    <p class="font-bold text-slate-800">${assign.title}</p>
+                                    <p class="text-sm text-slate-500">${course?.name || ''}</p>
+                                </div>
+                                <span class="font-semibold text-red-600">Due: ${assign.dueDate}</span>
+                              </li>`;
+                 });
+                 html += `</ul>`;
+            } else {
+                html += `<p class="text-slate-500">No upcoming assignments. Great job!</p>`;
+            }
+            html += `</div>
+                     <div class="bg-slate-50 p-4 rounded-lg">
+                        <h3 class="text-xl font-bold text-slate-700 mb-4">Recent Announcements</h3>`;
+             const recentAnnouncements = state.announcements
+                .filter(a => myCourseIds.includes(a.courseId))
+                .sort((a, b) => b.createdAt.toDate() - a.createdAt.toDate());
+
+             if(recentAnnouncements.length > 0) {
+                 html += `<ul class="space-y-3">`;
+                 recentAnnouncements.slice(0, 3).forEach(ann => {
+                     const course = state.courses.find(c => c.id === ann.courseId);
+                     const author = state.allUsers.find(u => u.id === ann.authorId);
+                     html += `<li class="p-3 bg-white rounded-md shadow-sm">
+                                <p class="text-sm text-slate-500"><strong>${course?.name || ''}</strong> - by ${author?.displayName || 'N/A'}</p>
+                                <p class="mt-1">${ann.content.replace(/\n/g, '<br>')}</p>
+                              </li>`
+                 });
+                 html += `</ul>`;
+             } else {
+                html += `<p class="text-slate-500">No recent announcements.</p>`;
+             }
+             html += `</div></div>`;
+            
+            html += `</div>`; // End grid
+            content.innerHTML = html;
         }
 
         function renderLaunchpad() {
@@ -467,7 +553,6 @@
             const [courseId] = idParts;
             if(courseId) return renderCourseDetail(courseId, params);
             
-            // ... Main courses list view implementation
              const content = document.getElementById('content');
             let html = `<div class="flex justify-between items-center mb-6">
                             <h3 class="text-2xl font-bold text-slate-700">All Courses</h3>`;
@@ -497,30 +582,277 @@
         }
 
         function renderCourseDetail(courseId, params) {
-            // ... Full implementation for course detail, including Stream, Classwork, People tabs
-            // This is a major new feature inspired by Google Classroom
-            const content = document.getElementById('content');
-             content.innerHTML = `<p class="p-8 text-center text-slate-500">Loading course details...</p>`;
+            const course = state.courses.find(c => c.id === courseId);
+            if (!course) {
+                document.getElementById('content').innerHTML = `<p>Course not found.</p><a href="#/${state.school.slug}/courses">&larr; Back to courses</a>`;
+                return;
+            }
+
+            const currentTab = params.get('tab') || 'stream';
+            setPageTitle(course.name);
+
+            const teacher = state.allUsers.find(u => u.id === course.teacherId);
+
+            let html = `
+                <div class="mb-6">
+                    <a href="#/${state.school.slug}/courses" class="text-sky-600 hover:underline">&larr; Back to all courses</a>
+                </div>
+                <div class="p-4 rounded-lg bg-sky-600 text-white shadow-lg mb-6">
+                    <h3 class="text-3xl font-bold">${course.name}</h3>
+                    <p>${teacher?.displayName || 'N/A'}</p>
+                </div>
+
+                <div class="flex border-b mb-6 overflow-x-auto">
+                    <a href="#/${state.school.slug}/courses/${courseId}?tab=stream" class="course-tab p-4 border-b-2 ${currentTab === 'stream' ? 'active' : ''}" data-tab="stream">Stream</a>
+                    <a href="#/${state.school.slug}/courses/${courseId}?tab=classwork" class="course-tab p-4 border-b-2 ${currentTab === 'classwork' ? 'active' : ''}" data-tab="classwork">Classwork</a>
+                    <a href="#/${state.school.slug}/courses/${courseId}?tab=people" class="course-tab p-4 border-b-2 ${currentTab === 'people' ? 'active' : ''}" data-tab="people">People</a>
+                    ${canEdit(course) ? `<a href="#/${state.school.slug}/courses/${courseId}?tab=attendance" class="course-tab p-4 border-b-2 ${currentTab === 'attendance' ? 'active' : ''}" data-tab="attendance">Attendance</a>` : ''}
+                </div>
+
+                <div id="course-content"></div>
+            `;
+            document.getElementById('content').innerHTML = html;
+
+            switch(currentTab) {
+                case 'classwork': renderCourseClasswork(course); break;
+                case 'people': renderCoursePeople(course); break;
+                case 'attendance': if(canEdit(course)) renderCourseAttendance(course); break;
+                case 'stream':
+                default:
+                    renderCourseStream(course); break;
+            }
         }
         
+        function renderCourseStream(course) {
+            const content = document.getElementById('course-content');
+            let formHtml = '';
+            if (canEdit(course)) {
+                formHtml = `
+                    <div class="bg-white p-4 rounded-lg shadow mb-6">
+                        <form id="announcement-form">
+                            <textarea name="content" class="w-full p-2 border rounded-lg" placeholder="Announce something to your class" required></textarea>
+                            <div class="text-right mt-2">
+                                <button type="submit" class="bg-sky-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-sky-600">Post</button>
+                            </div>
+                        </form>
+                    </div>
+                `;
+            }
+
+            const announcements = state.announcements
+                .filter(a => a.courseId === course.id)
+                .sort((a,b) => b.createdAt.toDate() - a.createdAt.toDate());
+
+            let announcementsHtml = announcements.map(ann => {
+                const author = state.allUsers.find(u => u.id === ann.authorId);
+                return `
+                    <div class="bg-white p-4 rounded-lg shadow flex items-start space-x-4">
+                        <div class="bg-sky-500 text-white rounded-full h-10 w-10 flex-shrink-0 flex items-center justify-center font-bold">${author.displayName.charAt(0)}</div>
+                        <div>
+                            <p class="font-semibold">${author.displayName} <span class="text-sm text-slate-500 font-normal">${ann.createdAt.toDate().toLocaleString()}</span></p>
+                            <p class="mt-1">${ann.content.replace(/\n/g, '<br>')}</p>
+                        </div>
+                    </div>
+                `
+            }).join('<hr class="my-6 border-slate-200">');
+
+            if (announcements.length === 0) {
+                announcementsHtml = `<p class="text-center text-slate-500 py-8">No announcements yet.</p>`;
+            }
+
+            content.innerHTML = `
+                <div class="max-w-3xl mx-auto">
+                    ${formHtml}
+                    ${announcementsHtml}
+                </div>
+            `;
+
+            if (canEdit(course)) {
+                document.getElementById('announcement-form').addEventListener('submit', e => handleAnnouncementSubmit(e, course.id));
+            }
+        }
+
+        function renderCourseClasswork(course) {
+            const content = document.getElementById('course-content');
+            let createButton = '';
+            if (canEdit(course)) {
+                createButton = `<button onclick="openAssignmentModal(null, '${course.id}')" class="bg-sky-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-sky-600">Create Assignment</button>`;
+            }
+            
+            const assignments = state.assignments.filter(a => a.courseId === course.id).sort((a,b) => new Date(b.dueDate) - new Date(a.dueDate));
+            let assignmentsHtml = '';
+            if (assignments.length > 0) {
+                 assignmentsHtml = `<ul class="space-y-3">`;
+                 assignments.forEach(a => {
+                     assignmentsHtml += `<li class="p-4 bg-slate-50 rounded-md flex justify-between items-center">
+                                <div>
+                                    <p class="font-semibold text-lg text-slate-800">${a.title}</p>
+                                    <p class="text-sm text-slate-500">Due: ${a.dueDate}</p>
+                                </div>`;
+                    if (canEdit(course)) {
+                        assignmentsHtml += `<div class="flex space-x-2">
+                                    <button onclick="openAssignmentModal('${a.id}', '${course.id}')" class="text-yellow-600 hover:text-yellow-800 font-semibold">Edit</button>
+                                    <button onclick="deleteAssignment('${a.id}')" class="text-red-600 hover:text-red-800 font-semibold">Delete</button>
+                                 </div>`;
+                    }
+                    assignmentsHtml += `</li>`;
+                 });
+                 assignmentsHtml += `</ul>`;
+            } else {
+                assignmentsHtml = `<p class="text-center text-slate-500 py-8">No assignments have been created for this course yet.</p>`;
+            }
+            
+            content.innerHTML = `
+                <div class="flex justify-end mb-4">${createButton}</div>
+                ${assignmentsHtml}
+            `;
+        }
+
+        function renderCoursePeople(course) {
+            const content = document.getElementById('course-content');
+            const teacher = state.allUsers.find(u => u.id === course.teacherId);
+            const enrolledStudents = state.students.filter(s => course.studentIds?.includes(s.id));
+
+            let teacherHtml = `<div class="border-b-2 border-sky-500 pb-2 mb-4">
+                <h3 class="text-2xl font-bold text-sky-600">Teacher</h3>
+              </div>
+              <div class="flex items-center space-x-4 p-2">
+                <div class="bg-slate-200 text-slate-700 rounded-full h-10 w-10 flex items-center justify-center font-bold">${teacher.displayName.charAt(0)}</div>
+                <p class="text-lg">${teacher.displayName}</p>
+              </div>`;
+
+            let studentsHtml = `<div class="border-b-2 border-sky-500 pb-2 mb-4 mt-8">
+                <h3 class="text-2xl font-bold text-sky-600">Students</h3>
+                <p class="text-slate-500">${enrolledStudents.length} students</p>
+              </div>
+              <ul class="space-y-1">`;
+            enrolledStudents.forEach(s => {
+                studentsHtml += `
+                    <li class="flex items-center space-x-4 p-2">
+                        <div class="bg-slate-200 text-slate-700 rounded-full h-10 w-10 flex-shrink-0 flex items-center justify-center font-bold">${s.displayName.charAt(0)}</div>
+                        <p class="text-lg">${s.displayName}</p>
+                    </li>`;
+            });
+            studentsHtml += `</ul>`;
+
+            content.innerHTML = `<div class="max-w-3xl mx-auto">${teacherHtml}${studentsHtml}</div>`;
+        }
+
+        function renderCourseAttendance(course) {
+             const content = document.getElementById('course-content');
+             const today = new Date().toISOString().split('T')[0];
+             const students = state.students.filter(s => course.studentIds?.includes(s.id));
+             const todaysAttendance = state.attendance.find(a => a.date === today && a.courseId === course.id);
+
+             let html = `
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="text-xl font-bold">Attendance for ${today}</h3>
+                    <button id="save-attendance-btn" class="bg-green-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-green-700">Save Attendance</button>
+                </div>
+                <form id="attendance-form">
+                <table class="min-w-full bg-white">
+                    <thead class="bg-slate-100">
+                        <tr>
+                            <th class="py-3 px-4 text-left font-semibold text-slate-600">Student Name</th>
+                            <th class="py-3 px-4 text-center font-semibold text-slate-600">Present</th>
+                            <th class="py-3 px-4 text-center font-semibold text-slate-600">Absent</th>
+                            <th class="py-3 px-4 text-center font-semibold text-slate-600">Tardy</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+             `;
+             students.forEach(student => {
+                 const status = todaysAttendance?.statuses?.[student.id] || 'present';
+                 html += `<tr class="border-b">
+                            <td class="py-3 px-4 font-medium">${student.displayName}</td>
+                            <td class="py-3 px-4 text-center"><input type="radio" name="${student.id}" value="present" ${status === 'present' ? 'checked' : ''} class="w-5 h-5"></td>
+                            <td class="py-3 px-4 text-center"><input type="radio" name="${student.id}" value="absent" ${status === 'absent' ? 'checked' : ''} class="w-5 h-5"></td>
+                            <td class="py-3 px-4 text-center"><input type="radio" name="${student.id}" value="tardy" ${status === 'tardy' ? 'checked' : ''} class="w-5 h-5"></td>
+                          </tr>`;
+             });
+             html += `</tbody></table></form>`;
+             content.innerHTML = html;
+
+             document.getElementById('save-attendance-btn').addEventListener('click', () => handleAttendanceSubmit(course.id, today, todaysAttendance?.id));
+        }
+
         function renderAttendance() {
             setPageTitle('Attendance');
-            // ... Full implementation for attendance
-             const content = document.getElementById('content');
-             content.innerHTML = `<p class="p-8 text-center text-slate-500">Attendance module is available for teachers from the course page.</p>`;
-        }
-
-        function renderGradebook(id, params) {
-            setPageTitle('Gradebook');
-            // ... Full implementation for gradebook
             const content = document.getElementById('content');
-            content.innerHTML = `<p class="p-8 text-center text-slate-500">Select a course to view its gradebook.</p>`;
+            
+            if (state.user.role === 'admin' || state.user.role === 'teacher') {
+                content.innerHTML = `<p class="text-slate-500">Please select a course to manage attendance.</p>`;
+            } else {
+                 content.innerHTML = `<p class="text-slate-500">This feature is for teachers and administrators.</p>`;
+            }
         }
 
+        function renderGradebook(idParts, params) {
+            setPageTitle('Gradebook');
+            const content = document.getElementById('content');
+            const courseId = params.get('courseId');
+
+            let courseOptions = `<option value="">Select a course...</option>`;
+            const myCourses = (state.user.role === 'admin') ? state.courses : state.courses.filter(c => c.teacherId === state.user.id);
+            myCourses.forEach(c => {
+                courseOptions += `<option value="${c.id}" ${c.id === courseId ? 'selected' : ''}>${c.name}</option>`;
+            });
+
+            let html = `<div class="mb-4">
+                            <label for="gradebook-course-select" class="block font-semibold mb-2">Select a Course:</label>
+                            <select id="gradebook-course-select" class="p-2 border rounded-lg w-full md:w-1/2">
+                                ${courseOptions}
+                            </select>
+                        </div>`;
+
+            if (courseId) {
+                const course = state.courses.find(c => c.id === courseId);
+                const students = state.students.filter(s => course?.studentIds?.includes(s.id));
+                const assignments = state.assignments.filter(a => a.courseId === courseId);
+                const grades = state.grades.filter(g => g.courseId === courseId);
+
+                html += `<div class="overflow-x-auto">
+                         <table class="min-w-full text-sm gradebook-table">
+                            <thead class="bg-slate-100">
+                                <tr>
+                                    <th class="p-2 border font-semibold text-left">Student Name</th>`;
+                assignments.forEach(a => {
+                    html += `<th class="p-2 border font-semibold">${a.title}</th>`;
+                });
+                html += `   </tr>
+                            </thead>
+                            <tbody>`;
+                students.forEach(student => {
+                    html += `<tr class="border-b">
+                                <td class="p-2 border font-medium text-left">${student.displayName}</td>`;
+                    assignments.forEach(assignment => {
+                        const grade = grades.find(g => g.studentId === student.id && g.assignmentId === assignment.id);
+                        html += `<td class="p-0 border">
+                                    <input type="text" value="${grade?.score || ''}" 
+                                           onchange="updateGrade('${student.id}', '${assignment.id}', '${courseId}', this.value)"
+                                           class="w-full h-full text-center p-2 outline-none focus:bg-sky-100" />
+                                 </td>`;
+                    });
+                    html += `</tr>`;
+                });
+                html += `   </tbody>
+                         </table>
+                         </div>`;
+            }
+            content.innerHTML = html;
+            
+            const selectEl = document.getElementById('gradebook-course-select');
+            if (selectEl) {
+                selectEl.addEventListener('change', (e) => {
+                     window.location.hash = `#/${state.school.slug}/gradebook?courseId=${e.target.value}`;
+                });
+            }
+        }
+        
         function renderTuition() {
             setPageTitle('Tuition & Billing');
             const content = document.getElementById('content');
-            content.innerHTML = `<div class="bg-slate-50 rounded-lg p-6">
+            content.innerHTML = `<div class="bg-slate-50 rounded-lg p-6 max-w-lg mx-auto">
                 <h3 class="text-xl font-bold text-slate-700 mb-4">Account Summary</h3>
                 <div class="space-y-2">
                     <div class="flex justify-between items-center"><p>Total Tuition:</p><p class="font-semibold">$15,000.00</p></div>
@@ -534,16 +866,27 @@
         
         function renderCalendar() {
              setPageTitle('Calendar');
-             // ... Full implementation for calendar
              const content = document.getElementById('content');
              content.innerHTML = `<div id='calendar'></div>`;
-             setTimeout(() => { // Allow DOM to update
+             
+             // This needs to be deferred to ensure the DOM element exists
+             setTimeout(() => {
                 const calendarEl = document.getElementById('calendar');
                 if(!calendarEl) return;
+                
+                const myCourseIds = state.courses.filter(c => c.studentIds?.includes(state.user.id) || c.teacherId === state.user.id).map(c=>c.id);
+
+                const assignmentEvents = state.assignments.filter(a => myCourseIds.includes(a.courseId)).map(a => ({
+                    title: `Due: ${a.title}`, start: a.dueDate, allDay: true, backgroundColor: '#ef4444'
+                }));
+                const schoolEvents = state.events.map(e => ({
+                    title: e.title, start: e.date, allDay: true, backgroundColor: '#22c55e'
+                }));
+                
                 state.currentCalendar = new FullCalendar.Calendar(calendarEl, {
                     initialView: 'dayGridMonth',
                     headerToolbar: { left: 'prev,next today', center: 'title', right: 'dayGridMonth,timeGridWeek,listWeek' },
-                    events: [ { title: 'All Saints\' Day', start: '2025-11-01' } ] // Placeholder
+                    events: [...assignmentEvents, ...schoolEvents]
                 });
                 state.currentCalendar.render();
              }, 0);
@@ -554,7 +897,6 @@
                 return document.getElementById('content').innerHTML = `<p>You do not have permission to view this page.</p>`;
             }
             setPageTitle('Users');
-             // ... Full implementation for user management
              const content = document.getElementById('content');
             let html = `<div class="flex justify-between items-center mb-6">
                             <h3 class="text-2xl font-bold text-slate-700">User Management</h3>
@@ -590,7 +932,6 @@
         
         function renderProfile() {
             setPageTitle('Profile');
-             // ... Full implementation for profile
              const content = document.getElementById('content');
             content.innerHTML = `
                 <div class="bg-slate-50 p-6 rounded-lg max-w-md mx-auto">
@@ -606,7 +947,6 @@
                 return document.getElementById('content').innerHTML = `<p>You do not have permission to view this page.</p>`;
             }
             setPageTitle('Settings');
-             // ... Full, working implementation for ALL settings tabs
             const [tabName = 'dayTypes'] = idParts; // Default to 'dayTypes'
             const content = document.getElementById('content');
              content.innerHTML = `
@@ -628,10 +968,10 @@
             
             const content = document.getElementById('settings-content');
             const tabRenderers = {
-                dayTypes: () => content.innerHTML = `<h3 class="text-lg font-bold">Day Types Management</h3> <p>This feature is under development.</p>`,
-                timeBlocks: () => content.innerHTML = `<h3 class="text-lg font-bold">Time Blocks Management</h3> <p>This feature is under development.</p>`,
-                masterCalendar: () => content.innerHTML = `<h3 class="text-lg font-bold">Master Calendar Management</h3> <p>This feature is under development.</p>`,
-                schedules: () => content.innerHTML = `<h3 class="text-lg font-bold">Student Schedules Management</h3> <p>This feature is under development.</p>`,
+                dayTypes: () => content.innerHTML = `<h3 class="text-lg font-bold">Day Types Management</h3> <p class="text-slate-500">Functionality for this section is under development.</p>`,
+                timeBlocks: () => content.innerHTML = `<h3 class="text-lg font-bold">Time Blocks Management</h3> <p class="text-slate-500">Functionality for this section is under development.</p>`,
+                masterCalendar: () => content.innerHTML = `<h3 class="text-lg font-bold">Master Calendar Management</h3> <p class="text-slate-500">Functionality for this section is under development.</p>`,
+                schedules: () => content.innerHTML = `<h3 class="text-lg font-bold">Student Schedules Management</h3> <p class="text-slate-500">Functionality for this section is under development.</p>`,
             };
             
             if (tabRenderers[tabName]) {
@@ -784,8 +1124,87 @@
             }
         };
 
+        // --- Announcement & Assignment CRUD ---
+        async function handleAnnouncementSubmit(e, courseId) {
+            e.preventDefault();
+            const content = e.target.elements.content.value;
+            if (!content.trim()) return;
+            try {
+                await addDoc(collection(db, 'schools', state.school.id, 'announcements'), {
+                    courseId,
+                    authorId: state.user.id,
+                    content,
+                    createdAt: serverTimestamp()
+                });
+                e.target.reset();
+            } catch (err) { showToast(`Error posting: ${err.message}`, 'error') }
+        }
+        window.openAssignmentModal = (assignmentId, courseId) => {
+            const assignment = assignmentId ? state.assignments.find(a => a.id === assignmentId) : null;
+            const title = assignment ? 'Edit Assignment' : 'New Assignment';
+            const body = `<form id="assignment-form">
+                <input type="hidden" name="id" value="${assignment?.id || ''}">
+                <input type="hidden" name="courseId" value="${courseId}">
+                <label class="block font-semibold mb-1">Title</label>
+                <input type="text" name="title" value="${assignment?.title || ''}" class="w-full p-2 border rounded-lg mb-4" required>
+                <label class="block font-semibold mb-1">Due Date</label>
+                <input type="date" name="dueDate" value="${assignment?.dueDate || ''}" class="w-full p-2 border rounded-lg mb-6" required>
+                <button type="submit" class="w-full bg-green-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-green-700">Save Assignment</button>
+            </form>`;
+            openModal(title, body);
+            document.getElementById('assignment-form').addEventListener('submit', handleAssignmentFormSubmit);
+        };
+        async function handleAssignmentFormSubmit(e) {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            const data = Object.fromEntries(formData.entries());
+            const assignmentId = data.id;
+            try {
+                if (assignmentId) {
+                    await updateDoc(doc(db, 'schools', state.school.id, 'assignments', assignmentId), data);
+                    showToast('Assignment updated.', 'success');
+                } else {
+                    delete data.id;
+                    await addDoc(collection(db, 'schools', state.school.id, 'assignments'), data);
+                    showToast('Assignment created.', 'success');
+                }
+                closeModal();
+            } catch (err) { showToast(`Error: ${err.message}`, 'error') }
+        }
+        window.deleteAssignment = async (assignmentId) => {
+            if (confirm('Delete this assignment?')) {
+                await deleteDoc(doc(db, 'schools', state.school.id, 'assignments', assignmentId));
+                showToast('Assignment deleted.', 'success');
+            }
+        };
+
+        // --- Gradebook & Attendance CRUD ---
+        window.updateGrade = async (studentId, assignmentId, courseId, score) => {
+            const gradeId = `${studentId}_${assignmentId}`;
+            try {
+                await setDoc(doc(db, 'schools', state.school.id, 'grades', gradeId), { studentId, assignmentId, courseId, score });
+                showToast(`Grade saved.`, 'success');
+            } catch (err) { showToast(`Error saving grade: ${err.message}`, 'error') }
+        };
+        async function handleAttendanceSubmit(courseId, date, attendanceId) {
+            const form = document.getElementById('attendance-form');
+            const formData = new FormData(form);
+            const statuses = Object.fromEntries(formData.entries());
+            const data = { courseId, date, statuses };
+            try {
+                if (attendanceId) {
+                    await updateDoc(doc(db, 'schools', state.school.id, 'attendance', attendanceId), data);
+                } else {
+                    await addDoc(collection(db, 'schools', state.school.id, 'attendance'), data);
+                }
+                showToast('Attendance saved!', 'success');
+            } catch (err) { showToast(`Error saving attendance: ${err.message}`, 'error') }
+        }
+
+
         // Initialize
         router();
     </script>
 </body>
 </html>
+
