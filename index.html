@@ -86,12 +86,14 @@
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signOut, createUserWithEmailAndPassword, signInWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, collection, doc, getDoc, setDoc, onSnapshot, addDoc, updateDoc, deleteDoc, query, where, writeBatch, getDocs, serverTimestamp, collectionGroup } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
         const db = getFirestore(app);
+        
+        let signupDisplayName = '';
 
         const state = {
             user: null, school: null, allUsers: [], students: [], teachers: [], courses: [],
@@ -212,14 +214,15 @@
                 const userData = placeholderDoc.data();
                 const batch = writeBatch(db);
                 const newUserRef = doc(db, 'schools', schoolId, 'users', user.uid);
-                batch.set(newUserRef, { ...userData, uid: user.uid, displayName: user.displayName, isPlaceholder: false, createdAt: serverTimestamp() });
+                batch.set(newUserRef, { ...userData, uid: user.uid, displayName: user.displayName || userData.displayName, isPlaceholder: false, createdAt: serverTimestamp() });
                 batch.delete(placeholderDoc.ref);
                 await batch.commit();
                 showToast('Account activated successfully!', 'success');
                 await loginToSchool(user.uid, schoolId);
             } else {
-                state.user = { uid: user.uid, displayName: user.displayName, email: user.email, isNew: true };
-                state.school = null;
+                const displayName = user.displayName || signupDisplayName;
+                state.user = { uid: user.uid, displayName: displayName, email: user.email, isNew: true };
+                signupDisplayName = ''; // Clear it after use
                 router();
             }
         }
@@ -282,23 +285,120 @@
             }
         }
 
-        function renderAuthView() {
+        function renderAuthView(view = 'login') {
             const container = document.getElementById('view-container');
             if (!container) return;
-            if (state.user && state.user.isNew) renderCreateSchoolView(container);
-            else renderLoginView(container);
+            
+            // This is the main router for the auth screen.
+            // It decides whether to show login, signup, or the new school setup.
+            if (state.user && state.user.isNew) {
+                renderCreateSchoolView(container);
+            } else if (view === 'login') {
+                renderLoginView(container);
+            } else {
+                renderSignupView(container);
+            }
         }
         
         function renderLoginView(container) {
-            container.innerHTML = `<h1 class="text-3xl font-bold text-slate-800 mb-2">Welcome to Schoolyard</h1><p class="text-slate-600 mb-8">The all-in-one management system.</p><button id="google-login-button" class="w-full bg-slate-800 text-white font-semibold py-3 px-4 rounded-lg hover:bg-slate-900 transition-colors flex items-center justify-center"><svg class="w-6 h-6 mr-3" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="white"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/><path d="M1 1h22v22H1z" fill="none"/></svg>Sign in with Google</button>`;
+            container.innerHTML = `
+                <h1 class="text-3xl font-bold text-slate-800 mb-2">Welcome Back</h1>
+                <p class="text-slate-600 mb-8">Please sign in to continue.</p>
+                <form id="login-form" class="text-left space-y-4">
+                    <div>
+                        <label class="font-semibold text-slate-700">Email</label>
+                        <input type="email" name="email" class="w-full p-2 border rounded-lg mt-1" required>
+                    </div>
+                    <div>
+                        <label class="font-semibold text-slate-700">Password</label>
+                        <input type="password" name="password" class="w-full p-2 border rounded-lg mt-1" required>
+                    </div>
+                    <button type="submit" class="w-full bg-primary-500 text-white font-bold py-3 px-4 rounded-lg hover:bg-primary-600">Login</button>
+                </form>
+                <div class="my-4 flex items-center">
+                    <hr class="w-full border-slate-300">
+                    <span class="px-2 text-slate-500 font-semibold text-sm">OR</span>
+                    <hr class="w-full border-slate-300">
+                </div>
+                <button id="google-login-button" class="w-full bg-slate-800 text-white font-semibold py-3 px-4 rounded-lg hover:bg-slate-900 transition-colors flex items-center justify-center">
+                    <svg class="w-6 h-6 mr-3" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="white"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/><path d="M1 1h22v22H1z" fill="none"/></svg>
+                    Sign in with Google
+                </button>
+                <p class="mt-6 text-sm">Don't have an account? <a href="#" onclick="renderAuthView('signup')" class="font-semibold text-primary-600 hover:underline">Sign up</a></p>
+            `;
             document.getElementById('google-login-button').addEventListener('click', () => {
                 const provider = new GoogleAuthProvider();
                 signInWithPopup(auth, provider).catch(err => showToast(`Login failed: ${err.message}`, 'error'));
             });
+            document.getElementById('login-form').addEventListener('submit', handleEmailLogin);
+        }
+
+        function renderSignupView(container) {
+            container.innerHTML = `
+                <h1 class="text-3xl font-bold text-slate-800 mb-2">Create an Account</h1>
+                <p class="text-slate-600 mb-8">Get started with Schoolyard.</p>
+                <form id="signup-form" class="text-left space-y-4">
+                     <div>
+                        <label class="font-semibold text-slate-700">Full Name</label>
+                        <input type="text" name="displayName" class="w-full p-2 border rounded-lg mt-1" required>
+                    </div>
+                    <div>
+                        <label class="font-semibold text-slate-700">Email</label>
+                        <input type="email" name="email" class="w-full p-2 border rounded-lg mt-1" required>
+                    </div>
+                    <div>
+                        <label class="font-semibold text-slate-700">Password</label>
+                        <input type="password" name="password" class="w-full p-2 border rounded-lg mt-1" required>
+                    </div>
+                    <button type="submit" class="w-full bg-green-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-green-700">Create Account</button>
+                </form>
+                <p class="mt-6 text-sm">Already have an account? <a href="#" onclick="renderAuthView('login')" class="font-semibold text-primary-600 hover:underline">Login</a></p>
+            `;
+            document.getElementById('signup-form').addEventListener('submit', handleEmailSignup);
         }
 
         function renderCreateSchoolView(container) {
-            container.innerHTML = `<h1 class="text-3xl font-bold text-slate-800 mb-2">Create Your School</h1><p class="text-slate-600 mb-8">Welcome, ${state.user.displayName}! Let's get started.</p><form id="school-signup-form" class="text-left"><label class="font-semibold text-slate-700">School Name</label><input id="signup-school-name" type="text" placeholder="e.g., Villanova Preparatory School" class="w-full p-2 border rounded-lg mb-4" required><button type="submit" class="w-full bg-green-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-green-700 flex items-center justify-center">Create School</button></form>`;
+            container.innerHTML = `
+                <h1 class="text-3xl font-bold text-slate-800 mb-2">One Last Step</h1>
+                <p class="text-slate-600 mb-6">Welcome, ${state.user.displayName}! Let's get your school set up.</p>
+                <div class="text-left space-y-4">
+                    <div>
+                        <label class="block font-semibold text-slate-700 mb-2">Are you a student or setting up a school as a teacher/administrator?</label>
+                        <div class="flex gap-4">
+                            <label class="flex-1 p-3 border rounded-lg has-[:checked]:bg-primary-100 has-[:checked]:border-primary-500 cursor-pointer">
+                                <input type="radio" name="accountType" value="teacher" class="sr-only">
+                                <span class="font-bold">Teacher / Admin</span>
+                                <p class="text-sm text-slate-500">I am setting up a new school.</p>
+                            </label>
+                            <label class="flex-1 p-3 border rounded-lg has-[:checked]:bg-rose-100 has-[:checked]:border-rose-500 cursor-pointer">
+                                <input type="radio" name="accountType" value="student" class="sr-only">
+                                <span class="font-bold">Student</span>
+                                 <p class="text-sm text-slate-500">I am trying to join a school.</p>
+                            </label>
+                        </div>
+                    </div>
+                    <div id="school-signup-container" class="hidden pt-4">
+                        <form id="school-signup-form">
+                            <label class="font-semibold text-slate-700">School Name</label>
+                            <input id="signup-school-name" type="text" placeholder="e.g., Villanova Preparatory School" class="w-full p-2 border rounded-lg mt-1 mb-4" required>
+                            <button type="submit" class="w-full bg-green-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-green-700 flex items-center justify-center">Create School</button>
+                        </form>
+                    </div>
+                    <div id="student-message-container" class="hidden p-4 bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700">
+                        <p class="font-bold">Wrong place, buddy!</p>
+                        <p>It looks like you're trying to join an existing school. You can't create a new school as a student. Please check your email for an invitation from your school's administrator, or make sure you're using the correct email address they have on file for you.</p>
+                    </div>
+                </div>
+            `;
+            
+            document.getElementsByName('accountType').forEach(radio => {
+                radio.addEventListener('change', (e) => {
+                    const isStudent = e.target.value === 'student';
+                    document.getElementById('school-signup-container').classList.toggle('hidden', isStudent);
+                    document.getElementById('student-message-container').classList.toggle('hidden', !isStudent);
+                });
+            });
+            
             document.getElementById('school-signup-form').addEventListener('submit', handleSchoolSignup);
         }
 
@@ -321,6 +421,32 @@
                 console.error("Error creating school:", error);
                 showToast('Could not create school. Please try again.', 'error');
                 submitBtn.disabled = false; submitBtn.textContent = 'Create School';
+            }
+        }
+        
+        async function handleEmailLogin(e) {
+            e.preventDefault();
+            const email = e.target.email.value;
+            const password = e.target.password.value;
+            try {
+                await signInWithEmailAndPassword(auth, email, password);
+                // onAuthStateChanged will handle the rest
+            } catch (error) {
+                showToast(`Login failed: ${error.message}`, 'error');
+            }
+        }
+
+        async function handleEmailSignup(e) {
+            e.preventDefault();
+            signupDisplayName = e.target.displayName.value;
+            const email = e.target.email.value;
+            const password = e.target.password.value;
+            try {
+                await createUserWithEmailAndPassword(auth, email, password);
+                // onAuthStateChanged will take over
+            } catch (error) {
+                signupDisplayName = ''; // Clear on error
+                showToast(`Signup failed: ${error.message}`, 'error');
             }
         }
         
@@ -907,6 +1033,7 @@
             document.getElementById('schedule-form').addEventListener('submit', (e) => handleScheduleFormSubmit(e, studentId));
         }
 
+
         function renderProfile() {
             setPageTitle('Profile');
             const content = document.getElementById('content');
@@ -1278,7 +1405,7 @@
             closeModal: () => document.getElementById('modal-template').classList.add('hidden'),
             openModal: (title, body, size = 'lg') => { const m = document.getElementById('modal-template'); const mc = document.getElementById('modal-content'); if(!m || !mc) return; document.getElementById('modal-title').innerText = title; document.getElementById('modal-body').innerHTML = body; mc.className = mc.className.replace(/max-w-\S+/g, `max-w-${size}`); m.classList.remove('hidden'); m.classList.add('flex'); },
             showToast: (message, type = 'success') => { const c = document.getElementById('toast-container'); if(!c) return; const t = document.createElement('div'); t.className = `toast ${type === 'success' ? 'bg-green-500' : 'bg-red-500'} text-white font-bold py-2 px-4 rounded-lg shadow-lg mb-2 opacity-0 transform translate-y-2`; t.textContent = message; c.appendChild(t); setTimeout(() => t.classList.remove('opacity-0', 'translate-y-2'), 100); setTimeout(() => { t.classList.add('opacity-0'); t.addEventListener('transitionend', () => t.remove()); }, 3000); },
-            
+            renderAuthView,
             openUserModal: (userId = null) => {
                 const user = userId ? state.allUsers.find(u => u.id === userId) : null;
                 const title = user ? `Edit User: ${user.displayName}` : 'Add New User';
@@ -1395,7 +1522,7 @@
 
                     const collectionsToDelete = ['assignments', 'grades', 'attendance', 'announcements'];
                     for (const coll of collectionsToDelete) {
-                        const q = query(collection(db, 'schools', state.school.id, coll), where('courseId', '==', courseId));
+                        const q = query(collectionGroup(db, coll), where('courseId', '==', courseId));
                         const snapshot = await getDocs(q);
                         snapshot.forEach(doc => batch.delete(doc.ref));
                     }
