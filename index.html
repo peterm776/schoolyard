@@ -443,6 +443,7 @@
             'dashboard': { render: renderParentDashboard },
             'launchpad': { render: renderLaunchpad },
             'courses': { render: renderCourses }, 
+            'schedule': { render: renderScheduleEditor },
             'attendance': { render: renderAttendance },
             'gradebook': { render: renderGradebook }, 
             'tuition': { render: renderTuition },
@@ -840,8 +841,72 @@
             const content = document.getElementById('content');
             if(!content) return;
             const allUsersSorted = [...state.allUsers].sort((a,b) => a.displayName.localeCompare(b.displayName));
-            content.innerHTML = `<div class="flex justify-between items-center mb-6"><h3 class="text-2xl font-bold text-slate-700">User Management</h3><button onclick="openUserModal()" class="bg-primary-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-primary-600">Add User</button></div><div class="overflow-x-auto"><table class="min-w-full bg-white"><thead class="bg-slate-100"><tr><th class="py-3 px-4 text-left font-semibold text-slate-600">Name</th><th class="py-3 px-4 text-left font-semibold text-slate-600">Email</th><th class="py-3 px-4 text-left font-semibold text-slate-600">Role</th><th class="py-3 px-4 text-left font-semibold text-slate-600">Actions</th></tr></thead><tbody>${allUsersSorted.map(u => `<tr class="border-b"><td class="py-3 px-4">${u.displayName}</td><td class="py-3 px-4">${u.email}</td><td class="py-3 px-4 capitalize">${u.role}</td><td class="py-3 px-4"><button onclick="openUserModal('${u.id}')" class="text-yellow-600 hover:underline">Edit</button><button onclick="deleteUser('${u.id}')" class="ml-4 text-red-600 hover:underline">Delete</button></td></tr>`).join('')}</tbody></table></div>`;
+            content.innerHTML = `<div class="flex justify-between items-center mb-6"><h3 class="text-2xl font-bold text-slate-700">User Management</h3><button onclick="openUserModal()" class="bg-primary-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-primary-600">Add User</button></div><div class="overflow-x-auto"><table class="min-w-full bg-white"><thead class="bg-slate-100"><tr><th class="py-3 px-4 text-left font-semibold text-slate-600">Name</th><th class="py-3 px-4 text-left font-semibold text-slate-600">Email</th><th class="py-3 px-4 text-left font-semibold text-slate-600">Role</th><th class="py-3 px-4 text-left font-semibold text-slate-600">Actions</th></tr></thead><tbody>${allUsersSorted.map(u => {
+                let actions = `<button onclick="openUserModal('${u.id}')" class="text-yellow-600 hover:underline">Edit</button><button onclick="deleteUser('${u.id}')" class="ml-4 text-red-600 hover:underline">Delete</button>`;
+                if (u.role === 'student') {
+                    actions += `<a href="#/schedule/${u.id}" class="ml-4 text-green-600 hover:underline">Schedule</a>`;
+                }
+                return `<tr class="border-b"><td class="py-3 px-4">${u.displayName}</td><td class="py-3 px-4">${u.email}</td><td class="py-3 px-4 capitalize">${u.role}</td><td class="py-3 px-4">${actions}</td></tr>`
+            }).join('')}</tbody></table></div>`;
         }
+
+        function renderScheduleEditor(idParts) {
+            const [studentId] = idParts;
+            const student = state.students.find(s => s.id === studentId);
+            const content = document.getElementById('content');
+            if (!content || !student) {
+                if(content) content.innerHTML = `<p>Student not found.</p>`;
+                return;
+            }
+
+            setPageTitle(`Schedule for ${student.displayName}`);
+            
+            const scheduleDoc = state.schedules.find(s => s.studentId === studentId);
+            const currentSchedule = scheduleDoc ? scheduleDoc.schedule : {};
+            const courseOptions = state.courses.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+
+            let html = `
+                <div class="mb-6"><a href="#/users" class="text-primary-600 hover:underline">&larr; Back to all users</a></div>
+                <form id="schedule-form">
+                    <div class="space-y-8">
+            `;
+
+            state.dayTypes.forEach(dayType => {
+                html += `<div><h3 class="text-2xl font-bold text-slate-700 mb-4">${dayType.name}</h3><div class="space-y-4">`;
+                const timeBlocks = state.timeBlocks.filter(tb => tb.dayTypeId === dayType.id).sort((a,b) => a.startTime.localeCompare(b.startTime));
+
+                if (timeBlocks.length === 0) {
+                    html += `<p class="text-slate-500">No time blocks defined for this day type.</p>`;
+                } else {
+                    timeBlocks.forEach(block => {
+                        const currentCourseId = currentSchedule[block.id] || '';
+                        html += `
+                            <div class="grid grid-cols-3 gap-4 items-center">
+                                <label class="font-semibold text-slate-600 text-right">${block.name} (${block.startTime} - ${block.endTime})</label>
+                                <div class="col-span-2">
+                                    <select name="${block.id}" class="w-full p-2 border rounded-lg">
+                                        <option value="">-- No Course --</option>
+                                        ${state.courses.map(c => `<option value="${c.id}" ${currentCourseId === c.id ? 'selected' : ''}>${c.name}</option>`).join('')}
+                                    </select>
+                                </div>
+                            </div>`;
+                    });
+                }
+                html += `</div></div>`;
+            });
+            
+            html += `
+                    </div>
+                    <div class="mt-8 text-right">
+                        <button type="submit" class="bg-green-600 text-white font-bold py-2 px-6 rounded-lg hover:bg-green-700">Save Schedule</button>
+                    </div>
+                </form>
+            `;
+            
+            content.innerHTML = html;
+            document.getElementById('schedule-form').addEventListener('submit', (e) => handleScheduleFormSubmit(e, studentId));
+        }
+
 
         function renderProfile() {
             setPageTitle('Profile');
@@ -1297,6 +1362,22 @@
                     e.target.reset();
                 } catch (err) {
                     showToast(`Error submitting note: ${err.message}`, 'error');
+                }
+            },
+            handleScheduleFormSubmit: async (e, studentId) => {
+                e.preventDefault();
+                const formData = new FormData(e.target);
+                const scheduleData = Object.fromEntries(formData.entries());
+                try {
+                    await setDoc(doc(db, 'schools', state.school.id, 'schedules', studentId), {
+                        studentId: studentId,
+                        schedule: scheduleData
+                    });
+                    showToast('Schedule saved successfully!', 'success');
+                    window.location.hash = '#/users';
+                } catch (err) {
+                    console.error("Error saving schedule:", err);
+                    showToast(`Error saving schedule: ${err.message}`, 'error');
                 }
             },
             
