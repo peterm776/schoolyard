@@ -87,7 +87,7 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signOut, createUserWithEmailAndPassword, signInWithEmailAndPassword, updateProfile } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, collection, doc, getDoc, setDoc, onSnapshot, addDoc, updateDoc, deleteDoc, query, where, writeBatch, getDocs, serverTimestamp, collectionGroup, arrayUnion, arrayRemove } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFirestore, collection, doc, getDoc, setDoc, onSnapshot, addDoc, updateDoc, deleteDoc, query, where, writeBatch, getDocs, serverTimestamp, collectionGroup, runTransaction } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
@@ -195,7 +195,6 @@
         });
 
         async function findUserSchoolAndLogin(user) {
-            // This collection group query is allowed by the security rules and is essential for login.
             const userQueryByEmail = query(collectionGroup(db, 'users'), where('email', '==', user.email));
             const userSnapshotByEmail = await getDocs(userQueryByEmail);
 
@@ -203,20 +202,30 @@
                 const userDoc = userSnapshotByEmail.docs[0];
                 const schoolId = userDoc.ref.parent.parent.id;
 
-                // Handle placeholder account activation
                 if (userDoc.data().isPlaceholder) {
-                    const userData = userDoc.data();
-                    const batch = writeBatch(db);
-                    // Create the new, permanent user document with the real UID
-                    const newUserRef = doc(db, 'schools', schoolId, 'users', user.uid);
-                    batch.set(newUserRef, { ...userData, uid: user.uid, displayName: user.displayName || userData.displayName, isPlaceholder: false, createdAt: serverTimestamp() });
-                    // Delete the temporary placeholder document
-                    batch.delete(userDoc.ref);
-                    await batch.commit();
-                    showToast('Account activated successfully!', 'success');
-                    await loginToSchool(user.uid, schoolId);
+                    // This is the account activation flow, now using a transaction
+                    try {
+                        await runTransaction(db, async (transaction) => {
+                            const placeholderRef = userDoc.ref;
+                            const newUserRef = doc(db, 'schools', schoolId, 'users', user.uid);
+                            
+                            const pDoc = await transaction.get(placeholderRef);
+                            if (!pDoc.exists()) {
+                                throw new Error("This invitation has already been used or is invalid.");
+                            }
+                            const userData = pDoc.data();
+                            
+                            transaction.set(newUserRef, { ...userData, uid: user.uid, displayName: user.displayName || userData.displayName, isPlaceholder: false, createdAt: serverTimestamp() });
+                            transaction.delete(placeholderRef);
+                        });
+                        showToast('Account activated successfully!', 'success');
+                        await loginToSchool(user.uid, schoolId);
+                    } catch (e) {
+                        console.error("Activation transaction failed: ", e);
+                        showToast(`Account activation failed: ${e.message}`, 'error');
+                        await signOut(auth); // Log out if activation fails
+                    }
                 } else {
-                    // Normal login for an existing, active user
                     await loginToSchool(userDoc.id, schoolId);
                 }
             } else {
@@ -369,7 +378,6 @@
             submitBtn.disabled = true;
 
             try {
-                // Check if a placeholder exists for this email FIRST.
                  const placeholderQuery = query(collectionGroup(db, 'users'), where('email', '==', data.email), where('isPlaceholder', '==', true));
                  const placeholderSnapshot = await getDocs(placeholderQuery);
                  if (placeholderSnapshot.empty) {
@@ -407,11 +415,7 @@
                     <label class="font-semibold text-slate-700">School Name</label>
                     <input name="schoolName" type="text" placeholder="e.g., Villanova Preparatory School" class="w-full p-2 border rounded-lg mt-1" required>
                 </div>
-                 <div>
-                    <label class="block font-semibold text-slate-700">Your Role</label>
-                     <p class="mt-2 inline-block bg-primary-100 text-primary-700 font-semibold px-3 py-1 rounded-full text-sm capitalize">Administrator</p>
-                </div>
-                <button type="submit" class="w-full bg-green-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-green-700 flex items-center justify-center">Create School</button>
+                <button type="submit" class="w-full bg-green-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-green-700 flex items-center justify-center">Create School & Account</button>
             </form>
             <p class="text-xs text-slate-500 mt-4">Already have an account? <a href="#/login" class="text-primary-600 hover:underline">Sign in instead</a>.</p>`;
             
@@ -428,7 +432,7 @@
             submitBtn.innerHTML = `<div class="loader !w-6 !h-6 !border-2 !border-t-white mr-2"></div> Creating...`;
             
             if (!data.schoolName.trim()) {
-                submitBtn.disabled = false; submitBtn.textContent = 'Create School';
+                submitBtn.disabled = false; submitBtn.textContent = 'Create School & Account';
                 return showToast('School name cannot be empty.', 'error');
             }
             try {
@@ -460,7 +464,7 @@
             } catch (error) {
                 console.error("Error creating school:", error);
                 showToast(`Could not create school: ${error.message}`, 'error');
-                submitBtn.disabled = false; submitBtn.textContent = 'Create School';
+                submitBtn.disabled = false; submitBtn.textContent = 'Create School & Account';
             }
         }
         
@@ -1109,9 +1113,9 @@
             document.getElementById('profile-form').addEventListener('submit', async (e) => {
                 e.preventDefault();
                 const newDisplayName = e.target.elements.displayName.value;
+                if (newDisplayName === state.user.displayName) return; // Don't save if no changes
                 try {
                     await updateDoc(doc(db, 'schools', state.school.id, 'users', state.user.id), { displayName: newDisplayName });
-                    // Also update the auth profile if possible
                     if(auth.currentUser && auth.currentUser.displayName !== newDisplayName) {
                          await updateProfile(auth.currentUser, { displayName: newDisplayName });
                     }
@@ -1638,11 +1642,9 @@
                 try {
                     const batch = writeBatch(db);
                     
-                    // 1. Delete the course document itself
                     const courseRef = doc(db, 'schools', state.school.id, 'courses', courseId);
                     batch.delete(courseRef);
 
-                    // 2. Delete all related documents (assignments, etc.)
                     const collectionsToDelete = ['assignments', 'grades', 'attendance', 'announcements'];
                     for (const coll of collectionsToDelete) {
                         const q = query(collection(db, 'schools', state.school.id, coll), where('courseId', '==', courseId));
@@ -1650,7 +1652,6 @@
                         snapshot.forEach(doc => batch.delete(doc.ref));
                     }
                     
-                    // 3. Remove the course from all student schedules
                     const schedulesSnapshot = await getDocs(collection(db, 'schools', state.school.id, 'schedules'));
                     schedulesSnapshot.forEach(scheduleDoc => {
                         const scheduleData = scheduleDoc.data();
@@ -1658,7 +1659,7 @@
                         let scheduleWasModified = false;
                         for(const blockId in newSchedule) {
                             if (newSchedule[blockId] === courseId) {
-                                delete newSchedule[blockId]; // or set to ''
+                                delete newSchedule[blockId];
                                 scheduleWasModified = true;
                             }
                         }
