@@ -347,13 +347,15 @@
             }).join('');
         }
 
-        // --- DATA FETCHING (REVISED FOR SECURITY) ---
+      // --- DATA FETCHING (REVISED FOR SECURITY) ---
         async function setupRealtimeListeners() {
+            // Clear any existing listeners to prevent duplicates
             if (state.unsubscribeListeners.length > 0) {
                 state.unsubscribeListeners.forEach(unsub => unsub());
                 state.unsubscribeListeners = [];
             }
         
+            // Listener for the main school document (name, theme, etc.)
             const schoolUnsub = onSnapshot(doc(db, 'schools', state.school.id), (doc) => {
                 if (state.user) {
                     const oldTheme = state.school?.theme;
@@ -362,6 +364,61 @@
                     if (document.getElementById('main-content')) renderAppShell();
                 }
             });
+            state.unsubscribeListeners.push(schoolUnsub);
+        
+            // Helper function to process data snapshots
+            const handleSnapshot = (key, snapshot) => {
+                if (!state.user) return;
+                state[key] = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+                if (key === 'users') {
+                    state.allUsers = state.users;
+                    state.students = state.users.filter(u => u.role === 'student');
+                    state.teachers = state.users.filter(u => u.role === 'teacher');
+                }
+                router(); // Re-render the current page with the new data
+            };
+        
+            const handleError = (key, error) => {
+                console.error(`Error listening to ${key}:`, error);
+                showToast(`Permission error fetching '${key}'. Check rules.`, 'error');
+            };
+        
+            // Define which collections each role can listen to in their entirety
+            const role = state.user.role;
+            let collectionsToListen = [];
+
+            if (role === 'admin') {
+                // Admins can listen to everything
+                collectionsToListen = ['users', 'courses', 'dayTypes', 'timeBlocks', 'masterCalendar', 'schedules', 'assignments', 'grades', 'attendance', 'attendanceNotes', 'events', 'announcements', 'tuitionItems', 'launchpadLinks', 'gradingPeriods', 'reportCardTemplates', 'generatedReportCards'];
+            } else if (role === 'teacher') {
+                // Teachers get all academic data, but not school-wide financial data like tuition.
+                collectionsToListen = ['users', 'courses', 'dayTypes', 'timeBlocks', 'masterCalendar', 'schedules', 'assignments', 'grades', 'attendance', 'attendanceNotes', 'events', 'announcements', 'gradingPeriods', 'reportCardTemplates', 'launchpadLinks'];
+            } else {
+                // Students and Parents get basic school info. Their specific data is fetched below.
+                collectionsToListen = ['users', 'courses', 'dayTypes', 'timeBlocks', 'masterCalendar', 'events', 'announcements', 'launchpadLinks'];
+            }
+            
+            // Setup listeners for the collections defined above
+            collectionsToListen.forEach(key => {
+                const q = query(collection(db, 'schools', state.school.id, key));
+                const unsub = onSnapshot(q, (snap) => handleSnapshot(key, snap), (err) => handleError(key, err));
+                state.unsubscribeListeners.push(unsub);
+            });
+
+            // For Students and Parents, set up specific, secure queries for their own private data
+            if (role === 'student' || role === 'parent') {
+                const studentIds = role === 'parent' ? (state.user.childrenIds || []) : [state.user.id];
+
+                if (studentIds.length > 0) {
+                     const collectionsToFilter = ['grades', 'tuitionItems', 'generatedReportCards'];
+                     collectionsToFilter.forEach(key => {
+                        const q = query(collection(db, 'schools', state.school.id, key), where('studentId', 'in', studentIds));
+                        const unsub = onSnapshot(q, (snap) => handleSnapshot(key, snap), (err) => handleError(key, err));
+                        state.unsubscribeListeners.push(unsub);
+                     });
+                }
+            }
+        }
             state.unsubscribeListeners.push(schoolUnsub);
         
             const handleSnapshot = (key, snapshot) => {
