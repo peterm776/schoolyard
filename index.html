@@ -86,14 +86,12 @@
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signOut, createUserWithEmailAndPassword, signInWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, collection, doc, getDoc, setDoc, onSnapshot, addDoc, updateDoc, deleteDoc, query, where, writeBatch, getDocs, serverTimestamp, collectionGroup } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signOut, createUserWithEmailAndPassword, signInWithEmailAndPassword, updateProfile } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, doc, getDoc, setDoc, onSnapshot, addDoc, updateDoc, deleteDoc, query, where, writeBatch, getDocs, serverTimestamp, collectionGroup, arrayUnion, arrayRemove } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
         const db = getFirestore(app);
-        
-        let signupDisplayName = '';
 
         const state = {
             user: null, school: null, allUsers: [], students: [], teachers: [], courses: [],
@@ -197,32 +195,34 @@
         });
 
         async function findUserSchoolAndLogin(user) {
-            const userQueryByUid = query(collectionGroup(db, 'users'), where('uid', '==', user.uid));
-            const userSnapshotByUid = await getDocs(userQueryByUid);
-            if (!userSnapshotByUid.empty) {
-                const userDoc = userSnapshotByUid.docs[0];
+            // This collection group query is allowed by the security rules and is essential for login.
+            const userQueryByEmail = query(collectionGroup(db, 'users'), where('email', '==', user.email));
+            const userSnapshotByEmail = await getDocs(userQueryByEmail);
+
+            if (!userSnapshotByEmail.empty) {
+                const userDoc = userSnapshotByEmail.docs[0];
                 const schoolId = userDoc.ref.parent.parent.id;
-                await loginToSchool(userDoc.id, schoolId);
-                return;
-            }
-            
-            const placeholderQuery = query(collectionGroup(db, 'users'), where('email', '==', user.email), where('isPlaceholder', '==', true));
-            const placeholderSnapshot = await getDocs(placeholderQuery);
-            if (!placeholderSnapshot.empty) {
-                const placeholderDoc = placeholderSnapshot.docs[0];
-                const schoolId = placeholderDoc.ref.parent.parent.id;
-                const userData = placeholderDoc.data();
-                const batch = writeBatch(db);
-                const newUserRef = doc(db, 'schools', schoolId, 'users', user.uid);
-                batch.set(newUserRef, { ...userData, uid: user.uid, displayName: user.displayName || userData.displayName, isPlaceholder: false, createdAt: serverTimestamp() });
-                batch.delete(placeholderDoc.ref);
-                await batch.commit();
-                showToast('Account activated successfully!', 'success');
-                await loginToSchool(user.uid, schoolId);
+
+                // Handle placeholder account activation
+                if (userDoc.data().isPlaceholder) {
+                    const userData = userDoc.data();
+                    const batch = writeBatch(db);
+                    // Create the new, permanent user document with the real UID
+                    const newUserRef = doc(db, 'schools', schoolId, 'users', user.uid);
+                    batch.set(newUserRef, { ...userData, uid: user.uid, displayName: user.displayName || userData.displayName, isPlaceholder: false, createdAt: serverTimestamp() });
+                    // Delete the temporary placeholder document
+                    batch.delete(userDoc.ref);
+                    await batch.commit();
+                    showToast('Account activated successfully!', 'success');
+                    await loginToSchool(user.uid, schoolId);
+                } else {
+                    // Normal login for an existing, active user
+                    await loginToSchool(userDoc.id, schoolId);
+                }
             } else {
-                const displayName = user.displayName || signupDisplayName;
-                state.user = { uid: user.uid, displayName: displayName, email: user.email, isNew: true };
-                signupDisplayName = ''; // Clear it after use
+                // No existing user found with this email, direct to the school creation flow.
+                state.user = { uid: user.uid, displayName: user.displayName, email: user.email, isNew: true };
+                state.school = null;
                 router();
             }
         }
@@ -253,6 +253,7 @@
         }
         
         window.addEventListener('hashchange', router);
+        window.addEventListener('load', router);
 
         function getRoute() {
             const hash = window.location.hash.replace('#/', '');
@@ -268,9 +269,13 @@
         function router() {
             const outlet = document.getElementById('router-outlet');
             if (!outlet) return;
+
             const [page, idParts, params] = getRoute();
-            if (state.user && state.school) {
-                if (!document.getElementById('main-content')) outlet.innerHTML = templates.appView;
+
+            if (state.user && state.school) { // User is logged in AND associated with a school
+                if (!document.getElementById('main-content')) {
+                    outlet.innerHTML = templates.appView;
+                }
                 renderAppShell();
                 const renderFunction = routes[page]?.render;
                 if (renderFunction) {
@@ -279,174 +284,155 @@
                     const defaultRoute = state.user.role === 'parent' ? 'dashboard' : 'myday';
                     routes[defaultRoute].render();
                 }
-            } else {
+            } else { // User is not logged in or has no school
                 outlet.innerHTML = templates.authView;
-                renderAuthView();
+                if (state.user && state.user.isNew) {
+                    renderCreateSchoolView();
+                } else {
+                    renderLoginView();
+                }
             }
         }
 
-        function renderAuthView(view = 'login') {
-            const container = document.getElementById('view-container');
-            if (!container) return;
-            
-            // This is the main router for the auth screen.
-            // It decides whether to show login, signup, or the new school setup.
-            if (state.user && state.user.isNew) {
-                renderCreateSchoolView(container);
-            } else if (view === 'login') {
-                renderLoginView(container);
-            } else {
-                renderSignupView(container);
-            }
+        function renderAuthView() {
+             const container = document.getElementById('view-container');
+             if (!container) return;
+             if (state.user && state.user.isNew) {
+                 renderCreateSchoolView();
+             } else {
+                 renderLoginView();
+             }
         }
         
-        function renderLoginView(container) {
+        function renderLoginView() {
+            const container = document.getElementById('view-container');
+            if (!container) return;
             container.innerHTML = `
-                <h1 class="text-3xl font-bold text-slate-800 mb-2">Welcome Back</h1>
-                <p class="text-slate-600 mb-8">Please sign in to continue.</p>
+                <h1 class="text-3xl font-bold text-slate-800 mb-2">Welcome to Schoolyard</h1>
+                <p class="text-slate-600 mb-6">Sign in to your school's portal.</p>
                 <form id="login-form" class="text-left space-y-4">
                     <div>
-                        <label class="font-semibold text-slate-700">Email</label>
-                        <input type="email" name="email" class="w-full p-2 border rounded-lg mt-1" required>
+                        <label for="email" class="font-semibold text-slate-700">Email</label>
+                        <input id="email" type="email" class="w-full p-2 border rounded-lg mt-1" required>
                     </div>
                     <div>
-                        <label class="font-semibold text-slate-700">Password</label>
-                        <input type="password" name="password" class="w-full p-2 border rounded-lg mt-1" required>
+                        <label for="password" class="font-semibold text-slate-700">Password</label>
+                        <input id="password" type="password" class="w-full p-2 border rounded-lg mt-1" required>
                     </div>
-                    <button type="submit" class="w-full bg-primary-500 text-white font-bold py-3 px-4 rounded-lg hover:bg-primary-600">Login</button>
+                    <button type="submit" class="w-full bg-primary-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-primary-600">Sign In</button>
                 </form>
-                <div class="my-4 flex items-center">
-                    <hr class="w-full border-slate-300">
-                    <span class="px-2 text-slate-500 font-semibold text-sm">OR</span>
-                    <hr class="w-full border-slate-300">
+                <div class="relative my-6">
+                  <div class="absolute inset-0 flex items-center" aria-hidden="true"><div class="w-full border-t border-gray-300"></div></div>
+                  <div class="relative flex justify-center"><span class="bg-white/80 px-2 text-sm text-gray-500">Or</span></div>
                 </div>
-                <button id="google-login-button" class="w-full bg-slate-800 text-white font-semibold py-3 px-4 rounded-lg hover:bg-slate-900 transition-colors flex items-center justify-center">
-                    <svg class="w-6 h-6 mr-3" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="white"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/><path d="M1 1h22v22H1z" fill="none"/></svg>
-                    Sign in with Google
-                </button>
-                <p class="mt-6 text-sm">Don't have an account? <a href="#" onclick="renderAuthView('signup')" class="font-semibold text-primary-600 hover:underline">Sign up</a></p>
-            `;
+                <button id="google-login-button" class="w-full bg-slate-800 text-white font-semibold py-2 px-4 rounded-lg hover:bg-slate-900 transition-colors flex items-center justify-center"><svg class="w-5 h-5 mr-3" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="white"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/><path d="M1 1h22v22H1z" fill="none"/></svg>Sign in with Google</button>
+                <p class="text-xs text-slate-500 mt-4">Don't have an account? <a href="#" id="show-signup" class="text-primary-600 hover:underline">Create a school</a>.</p>`;
+
+            document.getElementById('login-form').addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const email = e.target.elements.email.value;
+                const password = e.target.elements.password.value;
+                try {
+                    await signInWithEmailAndPassword(auth, email, password);
+                } catch (err) { showToast(`Login failed: ${err.message}`, 'error'); }
+            });
             document.getElementById('google-login-button').addEventListener('click', () => {
                 const provider = new GoogleAuthProvider();
                 signInWithPopup(auth, provider).catch(err => showToast(`Login failed: ${err.message}`, 'error'));
             });
-            document.getElementById('login-form').addEventListener('submit', handleEmailLogin);
-        }
-
-        function renderSignupView(container) {
-            container.innerHTML = `
-                <h1 class="text-3xl font-bold text-slate-800 mb-2">Create an Account</h1>
-                <p class="text-slate-600 mb-8">Get started with Schoolyard.</p>
-                <form id="signup-form" class="text-left space-y-4">
-                     <div>
-                        <label class="font-semibold text-slate-700">Full Name</label>
-                        <input type="text" name="displayName" class="w-full p-2 border rounded-lg mt-1" required>
-                    </div>
-                    <div>
-                        <label class="font-semibold text-slate-700">Email</label>
-                        <input type="email" name="email" class="w-full p-2 border rounded-lg mt-1" required>
-                    </div>
-                    <div>
-                        <label class="font-semibold text-slate-700">Password</label>
-                        <input type="password" name="password" class="w-full p-2 border rounded-lg mt-1" required>
-                    </div>
-                    <button type="submit" class="w-full bg-green-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-green-700">Create Account</button>
-                </form>
-                <p class="mt-6 text-sm">Already have an account? <a href="#" onclick="renderAuthView('login')" class="font-semibold text-primary-600 hover:underline">Login</a></p>
-            `;
-            document.getElementById('signup-form').addEventListener('submit', handleEmailSignup);
-        }
-
-        function renderCreateSchoolView(container) {
-            container.innerHTML = `
-                <h1 class="text-3xl font-bold text-slate-800 mb-2">One Last Step</h1>
-                <p class="text-slate-600 mb-6">Welcome, ${state.user.displayName}! Let's get your school set up.</p>
-                <div class="text-left space-y-4">
-                    <div>
-                        <label class="block font-semibold text-slate-700 mb-2">Are you a student or setting up a school as a teacher/administrator?</label>
-                        <div class="flex gap-4">
-                            <label class="flex-1 p-3 border rounded-lg has-[:checked]:bg-primary-100 has-[:checked]:border-primary-500 cursor-pointer">
-                                <input type="radio" name="accountType" value="teacher" class="sr-only">
-                                <span class="font-bold">Teacher / Admin</span>
-                                <p class="text-sm text-slate-500">I am setting up a new school.</p>
-                            </label>
-                            <label class="flex-1 p-3 border rounded-lg has-[:checked]:bg-rose-100 has-[:checked]:border-rose-500 cursor-pointer">
-                                <input type="radio" name="accountType" value="student" class="sr-only">
-                                <span class="font-bold">Student</span>
-                                 <p class="text-sm text-slate-500">I am trying to join a school.</p>
-                            </label>
-                        </div>
-                    </div>
-                    <div id="school-signup-container" class="hidden pt-4">
-                        <form id="school-signup-form">
-                            <label class="font-semibold text-slate-700">School Name</label>
-                            <input id="signup-school-name" type="text" placeholder="e.g., Villanova Preparatory School" class="w-full p-2 border rounded-lg mt-1 mb-4" required>
-                            <button type="submit" class="w-full bg-green-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-green-700 flex items-center justify-center">Create School</button>
-                        </form>
-                    </div>
-                    <div id="student-message-container" class="hidden p-4 bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700">
-                        <p class="font-bold">Wrong place, buddy!</p>
-                        <p>It looks like you're trying to join an existing school. You can't create a new school as a student. Please check your email for an invitation from your school's administrator, or make sure you're using the correct email address they have on file for you.</p>
-                    </div>
-                </div>
-            `;
-            
-            document.getElementsByName('accountType').forEach(radio => {
-                radio.addEventListener('change', (e) => {
-                    const isStudent = e.target.value === 'student';
-                    document.getElementById('school-signup-container').classList.toggle('hidden', isStudent);
-                    document.getElementById('student-message-container').classList.toggle('hidden', !isStudent);
-                });
+            document.getElementById('show-signup').addEventListener('click', (e) => {
+                e.preventDefault();
+                renderCreateSchoolView();
             });
+        }
+
+        function renderCreateSchoolView() {
+            const container = document.getElementById('view-container');
+            if (!container) return;
+            container.innerHTML = `<h1 class="text-3xl font-bold text-slate-800 mb-2">Create Your School</h1><p class="text-slate-600 mb-6">Let's get your new school portal started.</p>
+            <form id="school-signup-form" class="text-left space-y-4">
+                <div>
+                    <label class="font-semibold text-slate-700">Your Full Name</label>
+                    <input name="displayName" type="text" placeholder="e.g., Jane Doe" class="w-full p-2 border rounded-lg mt-1" required>
+                </div>
+                <div>
+                    <label class="font-semibold text-slate-700">Your Email</label>
+                    <input name="email" type="email" value="${auth.currentUser?.email || ''}" class="w-full p-2 border rounded-lg mt-1" required>
+                </div>
+                <div>
+                    <label class="font-semibold text-slate-700">Password</label>
+                    <input name="password" type="password" class="w-full p-2 border rounded-lg mt-1" required>
+                </div>
+                <div>
+                    <label class="font-semibold text-slate-700">School Name</label>
+                    <input name="schoolName" type="text" placeholder="e.g., Villanova Preparatory School" class="w-full p-2 border rounded-lg mt-1" required>
+                </div>
+                 <div>
+                    <label class="block font-semibold text-slate-700">Your Role</label>
+                    <select name="role" class="w-full p-2 border rounded-lg mt-1">
+                        <option value="admin">I am a Teacher or Administrator</option>
+                        <option value="student_parent">I am a Student or Parent</option>
+                    </select>
+                </div>
+                <button type="submit" class="w-full bg-green-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-green-700 flex items-center justify-center">Create School</button>
+            </form>
+            <p class="text-xs text-slate-500 mt-4">Already have an account? <a href="#" id="show-login" class="text-primary-600 hover:underline">Sign in instead</a>.</p>`;
             
             document.getElementById('school-signup-form').addEventListener('submit', handleSchoolSignup);
+            document.getElementById('show-login').addEventListener('click', (e) => {
+                e.preventDefault();
+                renderLoginView();
+            });
         }
 
         async function handleSchoolSignup(e) {
             e.preventDefault();
+            const formData = new FormData(e.target);
+            const data = Object.fromEntries(formData.entries());
+
+            if (data.role === 'student_parent') {
+                showToast("It looks like you're in the wrong place. This form is for creating a new school. Please use the email and password provided by your school to sign in.", 'error');
+                return;
+            }
+
             const submitBtn = e.target.querySelector('button[type="submit"]');
             submitBtn.disabled = true;
             submitBtn.innerHTML = `<div class="loader !w-6 !h-6 !border-2 !border-t-white mr-2"></div> Creating...`;
-            const schoolName = document.getElementById('signup-school-name').value.trim();
-            if (!schoolName) {
+            
+            if (!data.schoolName.trim()) {
                 submitBtn.disabled = false; submitBtn.textContent = 'Create School';
                 return showToast('School name cannot be empty.', 'error');
             }
             try {
-                const schoolRef = await addDoc(collection(db, 'schools'), { name: schoolName, theme: 'sky', logoUrl: '', createdAt: serverTimestamp() });
-                await setDoc(doc(db, 'schools', schoolRef.id, 'users', state.user.uid), { uid: state.user.uid, displayName: state.user.displayName, email: state.user.email, role: 'admin', isPlaceholder: false, createdAt: serverTimestamp() });
-                showToast('School created successfully!', 'success');
-                await findUserSchoolAndLogin(auth.currentUser);
+                // Step 1: Create the Firebase Auth user
+                const userCredential = await createUserWithEmailAndPassword(auth, data.email, data.password);
+                const user = userCredential.user;
+                await updateProfile(user, { displayName: data.displayName });
+
+                // Step 2: Create the school document in Firestore
+                const schoolRef = await addDoc(collection(db, 'schools'), { 
+                    name: data.schoolName, 
+                    theme: 'sky', 
+                    logoUrl: '', 
+                    createdAt: serverTimestamp() 
+                });
+
+                // Step 3: Create the admin user document in the new school's subcollection
+                await setDoc(doc(db, 'schools', schoolRef.id, 'users', user.uid), { 
+                    uid: user.uid, 
+                    displayName: data.displayName, 
+                    email: data.email, 
+                    role: 'admin', 
+                    isPlaceholder: false, 
+                    createdAt: serverTimestamp() 
+                });
+                
+                showToast('School created successfully! You are now logged in.', 'success');
+                // The onAuthStateChanged listener will automatically handle the login process from here.
             } catch (error) {
                 console.error("Error creating school:", error);
-                showToast('Could not create school. Please try again.', 'error');
+                showToast(`Could not create school: ${error.message}`, 'error');
                 submitBtn.disabled = false; submitBtn.textContent = 'Create School';
-            }
-        }
-        
-        async function handleEmailLogin(e) {
-            e.preventDefault();
-            const email = e.target.email.value;
-            const password = e.target.password.value;
-            try {
-                await signInWithEmailAndPassword(auth, email, password);
-                // onAuthStateChanged will handle the rest
-            } catch (error) {
-                showToast(`Login failed: ${error.message}`, 'error');
-            }
-        }
-
-        async function handleEmailSignup(e) {
-            e.preventDefault();
-            signupDisplayName = e.target.displayName.value;
-            const email = e.target.email.value;
-            const password = e.target.password.value;
-            try {
-                await createUserWithEmailAndPassword(auth, email, password);
-                // onAuthStateChanged will take over
-            } catch (error) {
-                signupDisplayName = ''; // Clear on error
-                showToast(`Signup failed: ${error.message}`, 'error');
             }
         }
         
@@ -528,7 +514,7 @@
                 collectionsToListen = ['users', 'courses', 'dayTypes', 'timeBlocks', 'masterCalendar', 'schedules', 'assignments', 'grades', 'attendance', 'attendanceNotes', 'events', 'announcements', 'tuitionItems', 'launchpadLinks', 'gradingPeriods', 'reportCardTemplates', 'generatedReportCards'];
             } else if (role === 'teacher') {
                 collectionsToListen = ['users', 'courses', 'dayTypes', 'timeBlocks', 'masterCalendar', 'schedules', 'assignments', 'grades', 'attendance', 'attendanceNotes', 'events', 'announcements', 'gradingPeriods', 'reportCardTemplates', 'launchpadLinks'];
-            } else {
+            } else { // student or parent
                 collectionsToListen = ['users', 'courses', 'dayTypes', 'timeBlocks', 'masterCalendar', 'events', 'announcements', 'launchpadLinks'];
             }
             
@@ -559,6 +545,20 @@
             if (role === 'teacher' && course && course.teacherId === id) return true;
             return false;
         }
+
+        // New helper function to get enrolled students for a course
+        function getEnrolledStudentIds(courseId) {
+            const studentIds = new Set();
+            state.schedules.forEach(schedule => {
+                for (const timeBlockId in schedule.schedule) {
+                    if (schedule.schedule[timeBlockId] === courseId) {
+                        studentIds.add(schedule.studentId);
+                    }
+                }
+            });
+            return Array.from(studentIds);
+        }
+
         function setPageTitle(title) { 
             const el = document.getElementById('page-title'); 
             if (el) el.textContent = title; 
@@ -646,7 +646,7 @@
                 const dayType = state.dayTypes.find(dt => dt.id === todaysCalendarEntry.dayTypeId);
                 const timeBlocks = state.timeBlocks.filter(tb => tb.dayTypeId === dayType?.id).sort((a,b) => a.startTime.localeCompare(b.startTime));
                 html += `<p class="font-semibold text-primary-600 mb-4">It's a "${dayType?.name || 'Unknown'}" day.</p>`;
-                if (timeBlocks.length > 0 && state.user.role === 'student') {
+                if (timeBlocks.length > 0 && (state.user.role === 'student' || state.user.role === 'parent')) {
                     html += `<ul class="space-y-2">`;
                     const mySchedule = state.schedules.find(s => s.studentId === state.user.id);
                     timeBlocks.forEach(tb => {
@@ -665,9 +665,15 @@
             }
             html += `</div>`;
 
-            const studentIds = state.user.role === 'parent' ? state.user.childrenIds || [] : [state.user.id];
-            const myCourses = state.courses.filter(c => c.teacherId === state.user.id || c.studentIds?.some(sid => studentIds.includes(sid)));
+            const studentIds = state.user.role === 'parent' ? state.user.childrenIds || [] : (state.user.role === 'student' ? [state.user.id] : []);
+            const myCourses = state.courses.filter(c => {
+                 if (state.user.role === 'teacher') return c.teacherId === state.user.id;
+                 if (state.user.role === 'admin') return true;
+                 const enrolledIds = getEnrolledStudentIds(c.id);
+                 return studentIds.some(sid => enrolledIds.includes(sid));
+            });
             const myCourseIds = myCourses.map(c => c.id);
+
             html += `<div class="lg:col-span-2 space-y-6">`;
             html += `<div class="bg-slate-50 p-4 rounded-lg"><h3 class="text-xl font-bold text-slate-700 mb-4">Upcoming Assignments</h3>`;
             const upcomingAssignments = state.assignments.filter(a => myCourseIds.includes(a.courseId) && new Date(a.dueDate) >= new Date()).sort((a,b) => new Date(a.dueDate) - new Date(b.dueDate));
@@ -712,14 +718,21 @@
             html += `</div>`;
 
             const studentIds = state.user.role === 'parent' ? state.user.childrenIds || [] : [state.user.id];
-            const myCourses = state.user.role === 'admin' ? state.courses
-                : state.courses.filter(c => c.teacherId === state.user.id || c.studentIds?.some(sid => studentIds.includes(sid)));
+            
+            const myCourses = state.courses.filter(c => {
+                 if (state.user.role === 'admin') return true;
+                 if (state.user.role === 'teacher') return c.teacherId === state.user.id;
+                 // For students/parents, check if they are in the dynamically generated list
+                 const enrolledIds = getEnrolledStudentIds(c.id);
+                 return studentIds.some(sid => enrolledIds.includes(sid));
+            });
 
             if (myCourses.length === 0) {
                 html += `<p class="text-slate-500">You are not enrolled in or assigned to any courses.</p>`;
             } else {
                 html += `<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">${myCourses.map(course => {
                     const teacher = state.allUsers.find(u => u.id === course.teacherId);
+                    const enrolledStudentIds = getEnrolledStudentIds(course.id);
                     let adminControls = '';
                     if (canEdit(course)) {
                         adminControls = `
@@ -734,7 +747,7 @@
                             <a href="#/courses/${course.id}" class="flex-grow">
                                 <h4 class="text-xl font-bold text-slate-800 truncate">${course.name}</h4>
                                 <p class="text-slate-600">Teacher: ${teacher ? teacher.displayName : 'Not Assigned'}</p>
-                                <p class="text-sm text-slate-500 mt-2">${course.studentIds?.length || 0} students</p>
+                                <p class="text-sm text-slate-500 mt-2">${enrolledStudentIds.length} students</p>
                             </a>
                             ${adminControls}
                         </div>`;
@@ -742,7 +755,6 @@
             }
             content.innerHTML = html;
         }
-
 
         function renderCourseDetail(courseId, params) {
             const course = state.courses.find(c => c.id === courseId);
@@ -782,7 +794,9 @@
             const content = document.getElementById('course-content');
             if(!content) return;
             const teacher = state.allUsers.find(u => u.id === course.teacherId);
-            const enrolledStudents = state.students.filter(s => course.studentIds?.includes(s.id));
+            const enrolledStudentIds = getEnrolledStudentIds(course.id);
+            const enrolledStudents = state.students.filter(s => enrolledStudentIds.includes(s.id));
+
             let teacherHtml = `<div class="border-b-2 border-primary-500 pb-2 mb-4"><h3 class="text-2xl font-bold text-primary-600">Teacher</h3></div><div class="flex items-center space-x-4 p-2"><div class="bg-slate-200 text-slate-700 rounded-full h-10 w-10 flex items-center justify-center font-bold">${teacher?.displayName?.charAt(0) || '?'}</div><p class="text-lg">${teacher?.displayName || 'N/A'}</p></div>`;
             let studentsHtml = `<div class="border-b-2 border-primary-500 pb-2 mb-4 mt-8"><h3 class="text-2xl font-bold text-primary-600">Students</h3><p class="text-slate-500">${enrolledStudents.length} students</p></div><ul class="space-y-1">${enrolledStudents.map(s => `<li class="flex items-center space-x-4 p-2"><div class="bg-slate-200 text-slate-700 rounded-full h-10 w-10 flex-shrink-0 flex items-center justify-center font-bold">${s.displayName.charAt(0)}</div><p class="text-lg">${s.displayName}</p></li>`).join('')}</ul>`;
             content.innerHTML = `<div class="max-w-3xl mx-auto">${teacherHtml}${studentsHtml}</div>`;
@@ -792,7 +806,8 @@
              const content = document.getElementById('course-content');
              if(!content) return;
              const today = new Date().toISOString().split('T')[0];
-             const students = state.students.filter(s => course.studentIds?.includes(s.id));
+             const enrolledStudentIds = getEnrolledStudentIds(course.id);
+             const students = state.students.filter(s => enrolledStudentIds.includes(s.id));
              const todaysAttendance = state.attendance.find(a => a.date === today && a.courseId === course.id);
              let html = `<div class="flex items-center justify-between mb-4"><h3 class="text-xl font-bold">Attendance for ${today}</h3><button id="save-attendance-btn" class="bg-green-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-green-700">Save Attendance</button></div><form id="attendance-form"><table class="min-w-full bg-white"><thead class="bg-slate-100"><tr><th class="py-3 px-4 text-left font-semibold text-slate-600">Student Name</th><th class="py-3 px-4 text-center font-semibold text-slate-600">Present</th><th class="py-3 px-4 text-center font-semibold text-slate-600">Absent</th><th class="py-3 px-4 text-center font-semibold text-slate-600">Tardy</th></tr></thead><tbody>${students.map(student => { const status = todaysAttendance?.statuses?.[student.id] || 'present'; return `<tr class="border-b"><td class="py-3 px-4 font-medium">${student.displayName}</td><td class="py-3 px-4 text-center"><input type="radio" name="${student.id}" value="present" ${status === 'present' ? 'checked' : ''} class="w-5 h-5 text-primary-600 focus:ring-primary-500"></td><td class="py-3 px-4 text-center"><input type="radio" name="${student.id}" value="absent" ${status === 'absent' ? 'checked' : ''} class="w-5 h-5 text-primary-600 focus:ring-primary-500"></td><td class="py-3 px-4 text-center"><input type="radio" name="${student.id}" value="tardy" ${status === 'tardy' ? 'checked' : ''} class="w-5 h-5 text-primary-600 focus:ring-primary-500"></td></tr>` }).join('')}</tbody></table></form>`;
              content.innerHTML = html;
@@ -831,7 +846,10 @@
                      return;
                 }
                 let html = notesHtml + `<h3 class="text-xl font-bold text-slate-700 mb-4">Take Daily Attendance</h3><div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">`;
-                html += myCourses.map(course => `<a href="#/courses/${course.id}?tab=attendance" class="block p-4 bg-slate-50 hover:bg-primary-100 rounded-lg shadow-sm transition-colors"><p class="font-bold text-lg text-primary-700">${course.name}</p><p class="text-slate-500">${course.studentIds?.length || 0} students</p></a>`).join('');
+                html += myCourses.map(course => {
+                    const studentCount = getEnrolledStudentIds(course.id).length;
+                    return `<a href="#/courses/${course.id}?tab=attendance" class="block p-4 bg-slate-50 hover:bg-primary-100 rounded-lg shadow-sm transition-colors"><p class="font-bold text-lg text-primary-700">${course.name}</p><p class="text-slate-500">${studentCount} students</p></a>`
+                }).join('');
                 html += `</div>`;
                 content.innerHTML = html;
             } else {
@@ -862,13 +880,13 @@
                     if (state.user.role === 'parent') {
                         html += `<h4 class="text-2xl font-semibold text-slate-600 mb-4 mt-6 border-t pt-4">${student.displayName}</h4>`;
                     }
-
-                    const studentCourses = state.courses.filter(c => c.studentIds?.includes(studentId));
                     
-                    if(studentCourses.length === 0) {
+                    const enrolledCourses = state.courses.filter(c => getEnrolledStudentIds(c.id).includes(studentId));
+                    
+                    if(enrolledCourses.length === 0) {
                        html += `<p class="text-slate-500">Not enrolled in any courses.</p>`;
                     } else {
-                       html += studentCourses.map(course => {
+                       html += enrolledCourses.map(course => {
                            const assignments = state.assignments.filter(a => a.courseId === course.id);
                            if (assignments.length === 0) return `<div class="mb-8"><h5 class="text-xl font-bold text-primary-700 mb-2">${course.name}</h5><p class="text-slate-500 text-sm">No assignments yet.</p></div>`;
                            
@@ -904,7 +922,8 @@
             let html = `<div class="mb-4"><label for="gradebook-course-select" class="block font-semibold mb-2">Select a Course:</label><select id="gradebook-course-select" class="p-2 border rounded-lg w-full md:w-1/2">${courseOptions}</select></div>`;
             if (courseId) {
                 const course = state.courses.find(c => c.id === courseId);
-                const students = state.students.filter(s => course?.studentIds?.includes(s.id));
+                const enrolledStudentIds = getEnrolledStudentIds(course.id);
+                const students = state.students.filter(s => enrolledStudentIds.includes(s.id));
                 const assignments = state.assignments.filter(a => a.courseId === courseId);
                 const grades = state.grades.filter(g => g.courseId === courseId);
                 html += `<div class="overflow-x-auto"><table class="min-w-full text-sm gradebook-table"><thead class="bg-slate-100"><tr><th class="p-2 border font-semibold text-left">Student Name</th>${assignments.map(a => `<th class="p-2 border font-semibold">${a.title}</th>`).join('')}</tr></thead><tbody>${students.map(student => `<tr class="border-b"><td class="p-2 border font-medium text-left">${student.displayName}</td>${assignments.map(assignment => { const grade = grades.find(g => g.studentId === student.id && g.assignmentId === assignment.id); return `<td class="p-0 border"><input type="text" value="${grade?.score || ''}" onchange="updateGrade('${student.id}', '${assignment.id}', '${courseId}', this.value, '${grade?.id || ''}')" class="w-full h-full text-center p-2 outline-none focus:bg-primary-100" /></td>` }).join('')}</tr>`).join('')}</tbody></table></div>`;
@@ -948,9 +967,11 @@
                  const calendarEl = document.getElementById('calendar');
                  if(!calendarEl || !state.courses) return;
                  const studentIds = state.user.role === 'parent' ? state.user.childrenIds || [] : [state.user.id];
-                 const myCourseIds = state.user.role === 'admin' 
-                    ? state.courses.map(c=>c.id) 
-                    : state.courses.filter(c => c.teacherId === state.user.id || c.studentIds?.some(sid => studentIds.includes(sid))).map(c=>c.id);
+                 const myCourseIds = state.courses.filter(c => {
+                    if (state.user.role === 'admin' || state.user.role === 'teacher') return true;
+                    const enrolledIds = getEnrolledStudentIds(c.id);
+                    return studentIds.some(sid => enrolledIds.includes(sid));
+                 }).map(c => c.id);
 
                  const assignmentEvents = state.assignments.filter(a => myCourseIds.includes(a.courseId)).map(a => ({ title: `Due: ${a.title}`, start: a.dueDate, allDay: true, backgroundColor: '#ef4444' }));
                  const schoolEvents = state.events.map(e => ({ title: e.title, start: e.date, allDay: true, backgroundColor: '#22c55e' }));
@@ -1033,12 +1054,44 @@
             document.getElementById('schedule-form').addEventListener('submit', (e) => handleScheduleFormSubmit(e, studentId));
         }
 
-
         function renderProfile() {
             setPageTitle('Profile');
             const content = document.getElementById('content');
             if(!content) return;
-            content.innerHTML = `<div class="bg-slate-50 p-6 rounded-lg max-w-md mx-auto"><h3 class="text-2xl font-bold text-slate-800">${state.user.displayName}</h3><p class="text-slate-600">${state.user.email}</p><p class="mt-2 inline-block bg-primary-100 text-primary-700 font-semibold px-3 py-1 rounded-full text-sm capitalize">${state.user.role}</p></div>`;
+            content.innerHTML = `<div class="bg-slate-50 p-6 rounded-lg max-w-md mx-auto">
+                <form id="profile-form">
+                    <div class="space-y-4">
+                        <div>
+                            <label class="block font-semibold text-slate-700">Full Name</label>
+                            <input type="text" name="displayName" value="${state.user.displayName}" class="w-full p-2 border rounded-lg mt-1">
+                        </div>
+                        <div>
+                            <label class="block font-semibold text-slate-700">Email</label>
+                            <input type="email" value="${state.user.email}" class="w-full p-2 border rounded-lg mt-1 bg-slate-100" readonly>
+                        </div>
+                        <div>
+                            <label class="block font-semibold text-slate-700">Role</label>
+                            <p class="mt-2 inline-block bg-primary-100 text-primary-700 font-semibold px-3 py-1 rounded-full text-sm capitalize">${state.user.role}</p>
+                        </div>
+                         <button type="submit" class="w-full bg-primary-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-primary-600">Save Changes</button>
+                    </div>
+                </form>
+            </div>`;
+
+            document.getElementById('profile-form').addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const newDisplayName = e.target.elements.displayName.value;
+                try {
+                    await updateDoc(doc(db, 'schools', state.school.id, 'users', state.user.id), { displayName: newDisplayName });
+                    // Also update the auth profile if possible
+                    if(auth.currentUser && auth.currentUser.displayName !== newDisplayName) {
+                         await updateProfile(auth.currentUser, { displayName: newDisplayName });
+                    }
+                    showToast('Profile updated!', 'success');
+                } catch(err) {
+                    showToast(`Error updating profile: ${err.message}`, 'error');
+                }
+            });
         }
 
         function renderSettings(idParts, params) {
@@ -1263,10 +1316,11 @@
                 </tr></thead><tbody>`;
             state.courses.forEach(course => {
                 const teacher = state.teachers.find(t => t.id === course.teacherId);
+                const studentCount = getEnrolledStudentIds(course.id).length;
                 tableHtml += `<tr class="border-b">
                     <td class="py-2 px-3">${course.name}</td>
                     <td class="py-2 px-3">${teacher?.displayName || 'N/A'}</td>
-                    <td class="py-2 px-3 text-center">${course.studentIds?.length || 0}</td>
+                    <td class="py-2 px-3 text-center">${studentCount}</td>
                 </tr>`;
             });
             tableHtml += `</tbody></table>`;
@@ -1404,8 +1458,8 @@
         Object.assign(window, {
             closeModal: () => document.getElementById('modal-template').classList.add('hidden'),
             openModal: (title, body, size = 'lg') => { const m = document.getElementById('modal-template'); const mc = document.getElementById('modal-content'); if(!m || !mc) return; document.getElementById('modal-title').innerText = title; document.getElementById('modal-body').innerHTML = body; mc.className = mc.className.replace(/max-w-\S+/g, `max-w-${size}`); m.classList.remove('hidden'); m.classList.add('flex'); },
-            showToast: (message, type = 'success') => { const c = document.getElementById('toast-container'); if(!c) return; const t = document.createElement('div'); t.className = `toast ${type === 'success' ? 'bg-green-500' : 'bg-red-500'} text-white font-bold py-2 px-4 rounded-lg shadow-lg mb-2 opacity-0 transform translate-y-2`; t.textContent = message; c.appendChild(t); setTimeout(() => t.classList.remove('opacity-0', 'translate-y-2'), 100); setTimeout(() => { t.classList.add('opacity-0'); t.addEventListener('transitionend', () => t.remove()); }, 3000); },
-            renderAuthView,
+            showToast: (message, type = 'success') => { const c = document.getElementById('toast-container'); if(!c) return; const t = document.createElement('div'); t.className = `toast ${type === 'success' ? 'bg-green-500' : 'bg-red-500'} text-white font-bold py-2 px-4 rounded-lg shadow-lg mb-2 opacity-0 transform translate-y-2`; t.textContent = message; c.appendChild(t); setTimeout(() => t.classList.remove('opacity-0', 'translate-y-2'), 100); setTimeout(() => { t.classList.add('opacity-0'); t.addEventListener('transitionend', () => t.remove()); }, 4000); },
+            
             openUserModal: (userId = null) => {
                 const user = userId ? state.allUsers.find(u => u.id === userId) : null;
                 const title = user ? `Edit User: ${user.displayName}` : 'Add New User';
@@ -1464,8 +1518,9 @@
                         await updateDoc(doc(db, 'schools', state.school.id, 'users', userId), data);
                         showToast('User updated!', 'success');
                     } else {
+                        // Creating a placeholder user (invite)
                         await addDoc(collection(db, 'schools', state.school.id, 'users'), { ...data, isPlaceholder: true, uid: '' });
-                        showToast('User added! They must log in to activate.', 'success');
+                        showToast('User invited! They must sign in to activate.', 'success');
                     }
                     closeModal();
                 } catch (err) {
@@ -1498,7 +1553,7 @@
                     await setDoc(doc(db, 'schools', state.school.id, 'schedules', studentId), {
                         studentId: studentId,
                         schedule: scheduleData
-                    });
+                    }, { merge: true }); // Use merge to avoid overwriting other fields if they exist
                     showToast('Schedule saved successfully!', 'success');
                     window.location.hash = '#/users';
                 } catch (err) {
@@ -1507,26 +1562,83 @@
                 }
             },
             
-            openCourseModal: (courseId = null, event) => { if(event) event.stopPropagation(); const course = courseId ? state.courses.find(c => c.id === courseId) : null; let teacherOptions = state.teachers.map(t => `<option value="${t.id}" ${course?.teacherId === t.id ? 'selected' : ''}>${t.displayName}</option>`).join(''); let studentOptions = state.students.map(s => `<option value="${s.id}" ${course?.studentIds?.includes(s.id) ? 'selected' : ''}>${s.displayName}</option>`).join(''); const title = course ? 'Edit Course' : 'Add New Course'; const body = `<form id="course-form"><input type="hidden" name="id" value="${course?.id || ''}"><label class="block font-semibold mb-1">Name</label><input type="text" name="name" value="${course?.name || ''}" class="w-full p-2 border rounded-lg mb-4" required><label class="block font-semibold mb-1">Description</label><textarea name="description" class="w-full p-2 border rounded-lg mb-4">${course?.description || ''}</textarea><label class="block font-semibold mb-1">Teacher</label><select name="teacherId" class="w-full p-2 border rounded-lg mb-4"><option value="">-- Select --</option>${teacherOptions}</select><label class="block font-semibold mb-1">Students (Ctrl/Cmd to select multiple)</label><select name="studentIds" multiple class="w-full p-2 border rounded-lg mb-6 h-48">${studentOptions}</select><button type="submit" class="w-full bg-green-600 text-white font-bold py-3 px-4 rounded-lg">Save</button></form>`; openModal(title, body, '2xl'); document.getElementById('course-form').addEventListener('submit', handleCourseFormSubmit); },
-            handleCourseFormSubmit: async (e) => { e.preventDefault(); const formData = new FormData(e.target); const courseId = formData.get('id'); const data = { name: formData.get('name'), description: formData.get('description'), teacherId: formData.get('teacherId'), studentIds: Array.from(e.target.elements.studentIds.selectedOptions).map(o => o.value) }; try { if (courseId) { await updateDoc(doc(db, 'schools', state.school.id, 'courses', courseId), data); showToast('Course updated!', 'success'); } else { await addDoc(collection(db, 'schools', state.school.id, 'courses'), data); showToast('Course created!', 'success'); } closeModal(); } catch (err) { showToast(`Error: ${err.message}`, 'error'); } },
+            openCourseModal: (courseId = null, event) => { 
+                if(event) event.stopPropagation(); 
+                const course = courseId ? state.courses.find(c => c.id === courseId) : null; 
+                let teacherOptions = state.teachers.map(t => `<option value="${t.id}" ${course?.teacherId === t.id ? 'selected' : ''}>${t.displayName}</option>`).join('');
+                const title = course ? 'Edit Course' : 'Add New Course'; 
+                const body = `<form id="course-form">
+                    <input type="hidden" name="id" value="${course?.id || ''}">
+                    <label class="block font-semibold mb-1">Name</label>
+                    <input type="text" name="name" value="${course?.name || ''}" class="w-full p-2 border rounded-lg mb-4" required>
+                    <label class="block font-semibold mb-1">Description</label>
+                    <textarea name="description" class="w-full p-2 border rounded-lg mb-4">${course?.description || ''}</textarea>
+                    <label class="block font-semibold mb-1">Teacher</label>
+                    <select name="teacherId" class="w-full p-2 border rounded-lg mb-4"><option value="">-- Select --</option>${teacherOptions}</select>
+                    <button type="submit" class="w-full bg-green-600 text-white font-bold py-3 px-4 rounded-lg">Save</button>
+                </form>`; 
+                openModal(title, body, 'lg'); 
+                document.getElementById('course-form').addEventListener('submit', handleCourseFormSubmit); 
+            },
+            handleCourseFormSubmit: async (e) => { 
+                e.preventDefault(); 
+                const formData = new FormData(e.target); 
+                const courseId = formData.get('id'); 
+                const data = { 
+                    name: formData.get('name'), 
+                    description: formData.get('description'), 
+                    teacherId: formData.get('teacherId'),
+                }; 
+                try { 
+                    if (courseId) { 
+                        await updateDoc(doc(db, 'schools', state.school.id, 'courses', courseId), data); 
+                        showToast('Course updated!', 'success'); 
+                    } else { 
+                        await addDoc(collection(db, 'schools', state.school.id, 'courses'), data); 
+                        showToast('Course created!', 'success'); 
+                    } 
+                    closeModal(); 
+                } catch (err) { 
+                    showToast(`Error: ${err.message}`, 'error'); 
+                } 
+            },
             deleteCourse: async (courseId, event) => {
                 event.stopPropagation();
-                if (!confirm('Are you sure you want to delete this course? This will also delete all associated assignments, grades, and attendance records. This action cannot be undone.')) return;
+                if (!confirm('Are you sure you want to delete this course? This will also delete all associated assignments, grades, attendance, and remove it from all student schedules. This action cannot be undone.')) return;
 
                 showToast('Deleting course and all related data...', 'success');
                 try {
                     const batch = writeBatch(db);
                     
+                    // 1. Delete the course document itself
                     const courseRef = doc(db, 'schools', state.school.id, 'courses', courseId);
                     batch.delete(courseRef);
 
+                    // 2. Delete all related documents (assignments, etc.)
                     const collectionsToDelete = ['assignments', 'grades', 'attendance', 'announcements'];
                     for (const coll of collectionsToDelete) {
-                        const q = query(collectionGroup(db, coll), where('courseId', '==', courseId));
+                        const q = query(collection(db, 'schools', state.school.id, coll), where('courseId', '==', courseId));
                         const snapshot = await getDocs(q);
                         snapshot.forEach(doc => batch.delete(doc.ref));
                     }
                     
+                    // 3. Remove the course from all student schedules
+                    const schedulesSnapshot = await getDocs(collection(db, 'schools', state.school.id, 'schedules'));
+                    schedulesSnapshot.forEach(scheduleDoc => {
+                        const scheduleData = scheduleDoc.data();
+                        const newSchedule = { ...scheduleData.schedule };
+                        let scheduleWasModified = false;
+                        for(const blockId in newSchedule) {
+                            if (newSchedule[blockId] === courseId) {
+                                delete newSchedule[blockId]; // or set to ''
+                                scheduleWasModified = true;
+                            }
+                        }
+                        if (scheduleWasModified) {
+                            batch.update(scheduleDoc.ref, { schedule: newSchedule });
+                        }
+                    });
+
                     await batch.commit();
                     showToast('Course deleted successfully.', 'success');
                 } catch (err) {
@@ -1565,7 +1677,7 @@
                 const rc = state.generatedReportCards.find(r => r.id === rcId);
                 if (!rc) return showToast('Report card not found.', 'error');
                 const period = state.gradingPeriods.find(p => p.id === rc.periodId);
-                const studentCourses = state.courses.filter(c => c.studentIds?.includes(rc.studentId));
+                const studentCourses = state.courses.filter(c => getEnrolledStudentIds(c.id).includes(rc.studentId));
                 
                 let gradesHtml = '';
                 if(rc.template.includeGrades) {
@@ -1617,7 +1729,8 @@
                 const head = [['Course Name', 'Teacher', '# Students']];
                 const body = state.courses.map(course => {
                     const teacher = state.teachers.find(t => t.id === course.teacherId);
-                    return [course.name, teacher?.displayName || 'N/A', course.studentIds?.length || 0];
+                    const studentCount = getEnrolledStudentIds(course.id).length;
+                    return [course.name, teacher?.displayName || 'N/A', studentCount];
                 });
                 doc.text("Enrollment Report", 14, 16);
                 doc.text(`Generated on: ${new Date().toLocaleDateString()}`, 14, 22)
@@ -1665,9 +1778,7 @@
                 });
             }
         });
-
-        applyTheme();
-        router();
     </script>
 </body>
 </html>
+
