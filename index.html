@@ -545,7 +545,7 @@
             } else if (role === 'teacher') {
                 collectionsToListen = ['users', 'courses', 'dayTypes', 'timeBlocks', 'masterCalendar', 'schedules', 'assignments', 'grades', 'attendance', 'attendanceNotes', 'events', 'announcements', 'gradingPeriods', 'reportCardTemplates', 'launchpadLinks'];
             } else { // student or parent
-                collectionsToListen = ['users', 'courses', 'dayTypes', 'timeBlocks', 'masterCalendar', 'events', 'announcements', 'launchpadLinks'];
+                collectionsToListen = ['users', 'courses', 'dayTypes', 'timeBlocks', 'masterCalendar', 'events', 'announcements', 'launchpadLinks', 'assignments'];
             }
             
             collectionsToListen.forEach(key => {
@@ -1111,9 +1111,8 @@
             document.getElementById('profile-form').addEventListener('submit', async (e) => {
                 e.preventDefault();
                 const newDisplayName = e.target.elements.displayName.value;
-                if (newDisplayName === state.user.displayName) return; // Don't save if no changes
+                if (newDisplayName === state.user.displayName) return;
                 try {
-                    // This update is now protected by the new, more specific security rule
                     await updateDoc(doc(db, 'schools', state.school.id, 'users', state.user.id), { displayName: newDisplayName });
                     if(auth.currentUser && auth.currentUser.displayName !== newDisplayName) {
                          await updateProfile(auth.currentUser, { displayName: newDisplayName });
