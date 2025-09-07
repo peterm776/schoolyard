@@ -89,6 +89,9 @@
         import { getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signOut, createUserWithEmailAndPassword, signInWithEmailAndPassword, updateProfile } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, collection, doc, getDoc, setDoc, onSnapshot, addDoc, updateDoc, deleteDoc, query, where, writeBatch, getDocs, serverTimestamp, collectionGroup, runTransaction } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
+        // This would be in your config.js file
+        // const firebaseConfig = { apiKey: "...", authDomain: "...", projectId: "...", ... };
+
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
         const db = getFirestore(app);
@@ -194,6 +197,7 @@
             }
         });
 
+        // SECURE LOGIN & ACTIVATION FLOW
         async function findUserSchoolAndLogin(user) {
             const userQueryByEmail = query(collectionGroup(db, 'users'), where('email', '==', user.email));
             const userSnapshotByEmail = await getDocs(userQueryByEmail);
@@ -203,6 +207,8 @@
                 const schoolId = userDoc.ref.parent.parent.id;
 
                 if (userDoc.data().isPlaceholder) {
+                    // This is the signup/activation flow for an invited user.
+                    // The user is already authenticated via Firebase Auth at this point.
                     try {
                         await runTransaction(db, async (transaction) => {
                             const placeholderRef = userDoc.ref;
@@ -214,6 +220,7 @@
                             }
                             const userData = pDoc.data();
                             
+                            // Create the new user document and delete the placeholder.
                             transaction.set(newUserRef, { ...userData, uid: user.uid, displayName: user.displayName || userData.displayName, isPlaceholder: false, createdAt: serverTimestamp() });
                             transaction.delete(placeholderRef);
                         });
@@ -221,16 +228,30 @@
                         await loginToSchool(user.uid, schoolId);
                     } catch (e) {
                         console.error("Activation transaction failed: ", e);
-                        showToast(`Account activation failed: ${e.message}`, 'error');
-                        await signOut(auth);
+                        showToast(`Account activation failed: ${e.message}. Please contact your administrator.`, 'error');
+                        await signOut(auth); // Log out the user since activation failed.
                     }
                 } else {
+                    // This is the regular login flow for an existing, active user.
+                    if (userDoc.id !== user.uid) {
+                        // This case is rare but important: an admin invited a user,
+                        // but that user created a school themselves with the same email.
+                        throw new Error("User account mismatch. An account with this email already exists.");
+                    }
                     await loginToSchool(userDoc.id, schoolId);
                 }
             } else {
-                state.user = { uid: user.uid, displayName: user.displayName, email: user.email, isNew: true };
-                state.school = null;
-                router();
+                // User signed in, but has no placeholder and no user document.
+                // This means they signed up without an invitation or are creating a new school.
+                // If they are on the create-school page, we let it proceed. Otherwise, we log them out.
+                const [page] = getRoute();
+                if (page !== 'create-school') {
+                    showToast("No invitation found for this email address.", "error");
+                    await signOut(auth);
+                } else {
+                    // Allow the create-school view to render for this new user
+                    router();
+                }
             }
         }
         
@@ -281,7 +302,8 @@
             const [page, idParts, params] = getRoute();
 
             if (auth.currentUser && state.school) {
-                 if (!document.getElementById('main-content')) {
+                // User is fully logged in to a school
+                if (!document.getElementById('main-content')) {
                     outlet.innerHTML = templates.appView;
                 }
                 renderAppShell();
@@ -294,6 +316,7 @@
                     routes[defaultRoute].render();
                 }
             } else {
+                // User is not logged in OR is logged in but not associated with a school yet
                 outlet.innerHTML = templates.authView;
                 const authRoutes = {
                     'login': renderLoginView,
@@ -348,7 +371,7 @@
             container.innerHTML = `<h1 class="text-3xl font-bold text-slate-800 mb-2">Create an Account</h1>
             <p class="text-slate-600 mb-6">Create your account to join your school.</p>
             <form id="signup-form" class="text-left space-y-4">
-                 <div>
+                <div>
                     <label class="font-semibold text-slate-700">Your Full Name</label>
                     <input name="displayName" type="text" placeholder="e.g., John Appleseed" class="w-full p-2 border rounded-lg mt-1" required>
                 </div>
@@ -368,27 +391,27 @@
             document.getElementById('signup-form').addEventListener('submit', handleSignupSubmit);
         }
 
+        // SECURE SIGNUP LOGIC
         async function handleSignupSubmit(e) {
             e.preventDefault();
             const formData = new FormData(e.target);
             const data = Object.fromEntries(formData.entries());
             const submitBtn = e.target.querySelector('button[type="submit"]');
             submitBtn.disabled = true;
+            submitBtn.innerHTML = "Signing Up...";
 
             try {
-                 const placeholderQuery = query(collectionGroup(db, 'users'), where('email', '==', data.email), where('isPlaceholder', '==', true));
-                 const placeholderSnapshot = await getDocs(placeholderQuery);
-                 if (placeholderSnapshot.empty) {
-                    throw new Error("No invitation found for this email. Please contact your school's administrator.");
-                 }
-
+                // Step 1: Immediately create the Auth user.
                 const userCredential = await createUserWithEmailAndPassword(auth, data.email, data.password);
                 await updateProfile(userCredential.user, { displayName: data.displayName });
-                // onAuthStateChanged will handle the rest of the login and activation flow.
-                showToast('Account created! Logging you in...', 'success');
+                
+                // Step 2: onAuthStateChanged will now fire and run findUserSchoolAndLogin,
+                // which will handle the invitation check and account activation.
+                showToast('Account created! Checking for invitation...', 'success');
             } catch(err) {
                 showToast(`Signup failed: ${err.message}`, 'error');
                 submitBtn.disabled = false;
+                submitBtn.innerHTML = "Sign Up";
             }
         }
 
@@ -425,19 +448,20 @@
             const formData = new FormData(e.target);
             const data = Object.fromEntries(formData.entries());
 
+            // If the user is already authenticated (e.g., from a failed signup),
+            // we proceed to create the school documents. Otherwise, we create the Auth user first.
+            let user = auth.currentUser;
             const submitBtn = e.target.querySelector('button[type="submit"]');
             submitBtn.disabled = true;
             submitBtn.innerHTML = `<div class="loader !w-6 !h-6 !border-2 !border-t-white mr-2"></div> Creating...`;
             
-            if (!data.schoolName.trim()) {
-                submitBtn.disabled = false; submitBtn.textContent = 'Create School & Account';
-                return showToast('School name cannot be empty.', 'error');
-            }
             try {
-                // Step 1: Create the Firebase Auth user
-                const userCredential = await createUserWithEmailAndPassword(auth, data.email, data.password);
-                const user = userCredential.user;
-                await updateProfile(user, { displayName: data.displayName });
+                if (!user || user.email !== data.email) {
+                    // Create the Firebase Auth user if they don't exist or email doesn't match
+                    const userCredential = await createUserWithEmailAndPassword(auth, data.email, data.password);
+                    user = userCredential.user;
+                    await updateProfile(user, { displayName: data.displayName });
+                }
 
                 // Step 2: Create the school document in Firestore
                 const schoolRef = await addDoc(collection(db, 'schools'), { 
@@ -458,7 +482,7 @@
                 });
                 
                 showToast('School created successfully! You are now logged in.', 'success');
-                // The onAuthStateChanged listener will automatically handle the login process.
+                // onAuthStateChanged will handle the rest.
             } catch (error) {
                 console.error("Error creating school:", error);
                 showToast(`Could not create school: ${error.message}`, 'error');
@@ -560,9 +584,9 @@
                 if (studentIds.length > 0) {
                      const collectionsToFilter = ['grades', 'tuitionItems', 'generatedReportCards', 'schedules'];
                      collectionsToFilter.forEach(key => {
-                        const q = query(collection(db, 'schools', state.school.id, key), where('studentId', 'in', studentIds));
-                        const unsub = onSnapshot(q, (snap) => handleSnapshot(key, snap), (err) => handleError(key, err));
-                        state.unsubscribeListeners.push(unsub);
+                         const q = query(collection(db, 'schools', state.school.id, key), where('studentId', 'in', studentIds));
+                         const unsub = onSnapshot(q, (snap) => handleSnapshot(key, snap), (err) => handleError(key, err));
+                         state.unsubscribeListeners.push(unsub);
                      });
                 }
             }
@@ -576,7 +600,6 @@
             return false;
         }
 
-        // New helper function to get enrolled students for a course
         function getEnrolledStudentIds(courseId) {
             const studentIds = new Set();
             state.schedules.forEach(schedule => {
@@ -625,40 +648,40 @@
              const studentOptions = children.map(c => `<option value="${c.id}">${c.displayName}</option>`).join('');
 
              content.innerHTML = `
-                <div class="max-w-2xl mx-auto">
-                    <h3 class="text-2xl font-bold text-slate-700 mb-6">Parent Dashboard</h3>
-                    <div class="bg-slate-50 p-6 rounded-lg shadow-sm">
-                        <h4 class="text-xl font-bold text-slate-700 mb-4">Submit Attendance Note</h4>
-                        <form id="attendance-note-form">
-                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <div>
-                                    <label class="block font-semibold text-slate-700">Student</label>
-                                    <select name="studentId" class="w-full p-2 border rounded-lg mt-1" required>${studentOptions}</select>
-                                </div>
+                 <div class="max-w-2xl mx-auto">
+                     <h3 class="text-2xl font-bold text-slate-700 mb-6">Parent Dashboard</h3>
+                     <div class="bg-slate-50 p-6 rounded-lg shadow-sm">
+                         <h4 class="text-xl font-bold text-slate-700 mb-4">Submit Attendance Note</h4>
+                         <form id="attendance-note-form">
+                             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                                  <div>
-                                    <label class="block font-semibold text-slate-700">Date</label>
-                                    <input type="date" name="date" value="${new Date().toISOString().split('T')[0]}" class="w-full p-2 border rounded-lg mt-1" required>
-                                </div>
-                                <div class="md:col-span-2">
-                                    <label class="block font-semibold text-slate-700">Note Type</label>
-                                    <select name="type" class="w-full p-2 border rounded-lg mt-1" required>
-                                        <option value="sick">Sick Day</option>
-                                        <option value="late">Arriving Late</option>
-                                        <option value="early">Leaving Early</option>
-                                    </select>
-                                </div>
-                                <div class="md:col-span-2">
-                                    <label class="block font-semibold text-slate-700">Reason (optional)</label>
-                                    <textarea name="reason" rows="3" placeholder="e.g., Doctor's appointment at 2 PM" class="w-full p-2 border rounded-lg mt-1"></textarea>
-                                </div>
-                            </div>
-                            <div class="text-right mt-4">
-                                <button type="submit" class="bg-primary-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-primary-600">Submit Note</button>
-                            </div>
-                        </form>
-                    </div>
-                </div>
-             `;
+                                     <label class="block font-semibold text-slate-700">Student</label>
+                                     <select name="studentId" class="w-full p-2 border rounded-lg mt-1" required>${studentOptions}</select>
+                                 </div>
+                                 <div>
+                                     <label class="block font-semibold text-slate-700">Date</label>
+                                     <input type="date" name="date" value="${new Date().toISOString().split('T')[0]}" class="w-full p-2 border rounded-lg mt-1" required>
+                                 </div>
+                                 <div class="md:col-span-2">
+                                     <label class="block font-semibold text-slate-700">Note Type</label>
+                                     <select name="type" class="w-full p-2 border rounded-lg mt-1" required>
+                                         <option value="sick">Sick Day</option>
+                                         <option value="late">Arriving Late</option>
+                                         <option value="early">Leaving Early</option>
+                                     </select>
+                                 </div>
+                                 <div class="md:col-span-2">
+                                     <label class="block font-semibold text-slate-700">Reason (optional)</label>
+                                     <textarea name="reason" rows="3" placeholder="e.g., Doctor's appointment at 2 PM" class="w-full p-2 border rounded-lg mt-1"></textarea>
+                                 </div>
+                             </div>
+                             <div class="text-right mt-4">
+                                 <button type="submit" class="bg-primary-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-primary-600">Submit Note</button>
+                             </div>
+                         </form>
+                     </div>
+                 </div>
+              `;
              document.getElementById('attendance-note-form').addEventListener('submit', handleAttendanceNoteSubmit);
         }
 
@@ -697,10 +720,10 @@
 
             const studentIds = state.user.role === 'parent' ? state.user.childrenIds || [] : (state.user.role === 'student' ? [state.user.id] : []);
             const myCourses = state.courses.filter(c => {
-                 if (state.user.role === 'teacher') return c.teacherId === state.user.id;
-                 if (state.user.role === 'admin') return true;
-                 const enrolledIds = getEnrolledStudentIds(c.id);
-                 return studentIds.some(sid => enrolledIds.includes(sid));
+                if (state.user.role === 'teacher') return c.teacherId === state.user.id;
+                if (state.user.role === 'admin') return true;
+                const enrolledIds = getEnrolledStudentIds(c.id);
+                return studentIds.some(sid => enrolledIds.includes(sid));
             });
             const myCourseIds = myCourses.map(c => c.id);
 
@@ -750,11 +773,10 @@
             const studentIds = state.user.role === 'parent' ? state.user.childrenIds || [] : [state.user.id];
             
             const myCourses = state.courses.filter(c => {
-                 if (state.user.role === 'admin') return true;
-                 if (state.user.role === 'teacher') return c.teacherId === state.user.id;
-                 // For students/parents, check if they are in the dynamically generated list
-                 const enrolledIds = getEnrolledStudentIds(c.id);
-                 return studentIds.some(sid => enrolledIds.includes(sid));
+                if (state.user.role === 'admin') return true;
+                if (state.user.role === 'teacher') return c.teacherId === state.user.id;
+                const enrolledIds = getEnrolledStudentIds(c.id);
+                return studentIds.some(sid => enrolledIds.includes(sid));
             });
 
             if (myCourses.length === 0) {
@@ -833,15 +855,15 @@
         }
 
         function renderCourseAttendance(course) {
-             const content = document.getElementById('course-content');
-             if(!content) return;
-             const today = new Date().toISOString().split('T')[0];
-             const enrolledStudentIds = getEnrolledStudentIds(course.id);
-             const students = state.students.filter(s => enrolledStudentIds.includes(s.id));
-             const todaysAttendance = state.attendance.find(a => a.date === today && a.courseId === course.id);
-             let html = `<div class="flex items-center justify-between mb-4"><h3 class="text-xl font-bold">Attendance for ${today}</h3><button id="save-attendance-btn" class="bg-green-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-green-700">Save Attendance</button></div><form id="attendance-form"><table class="min-w-full bg-white"><thead class="bg-slate-100"><tr><th class="py-3 px-4 text-left font-semibold text-slate-600">Student Name</th><th class="py-3 px-4 text-center font-semibold text-slate-600">Present</th><th class="py-3 px-4 text-center font-semibold text-slate-600">Absent</th><th class="py-3 px-4 text-center font-semibold text-slate-600">Tardy</th></tr></thead><tbody>${students.map(student => { const status = todaysAttendance?.statuses?.[student.id] || 'present'; return `<tr class="border-b"><td class="py-3 px-4 font-medium">${student.displayName}</td><td class="py-3 px-4 text-center"><input type="radio" name="${student.id}" value="present" ${status === 'present' ? 'checked' : ''} class="w-5 h-5 text-primary-600 focus:ring-primary-500"></td><td class="py-3 px-4 text-center"><input type="radio" name="${student.id}" value="absent" ${status === 'absent' ? 'checked' : ''} class="w-5 h-5 text-primary-600 focus:ring-primary-500"></td><td class="py-3 px-4 text-center"><input type="radio" name="${student.id}" value="tardy" ${status === 'tardy' ? 'checked' : ''} class="w-5 h-5 text-primary-600 focus:ring-primary-500"></td></tr>` }).join('')}</tbody></table></form>`;
-             content.innerHTML = html;
-             document.getElementById('save-attendance-btn').addEventListener('click', () => handleAttendanceSubmit(course.id, today, todaysAttendance?.id));
+              const content = document.getElementById('course-content');
+              if(!content) return;
+              const today = new Date().toISOString().split('T')[0];
+              const enrolledStudentIds = getEnrolledStudentIds(course.id);
+              const students = state.students.filter(s => enrolledStudentIds.includes(s.id));
+              const todaysAttendance = state.attendance.find(a => a.date === today && a.courseId === course.id);
+              let html = `<div class="flex items-center justify-between mb-4"><h3 class="text-xl font-bold">Attendance for ${today}</h3><button id="save-attendance-btn" class="bg-green-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-green-700">Save Attendance</button></div><form id="attendance-form"><table class="min-w-full bg-white"><thead class="bg-slate-100"><tr><th class="py-3 px-4 text-left font-semibold text-slate-600">Student Name</th><th class="py-3 px-4 text-center font-semibold text-slate-600">Present</th><th class="py-3 px-4 text-center font-semibold text-slate-600">Absent</th><th class="py-3 px-4 text-center font-semibold text-slate-600">Tardy</th></tr></thead><tbody>${students.map(student => { const status = todaysAttendance?.statuses?.[student.id] || 'present'; return `<tr class="border-b"><td class="py-3 px-4 font-medium">${student.displayName}</td><td class="py-3 px-4 text-center"><input type="radio" name="${student.id}" value="present" ${status === 'present' ? 'checked' : ''} class="w-5 h-5 text-primary-600 focus:ring-primary-500"></td><td class="py-3 px-4 text-center"><input type="radio" name="${student.id}" value="absent" ${status === 'absent' ? 'checked' : ''} class="w-5 h-5 text-primary-600 focus:ring-primary-500"></td><td class="py-3 px-4 text-center"><input type="radio" name="${student.id}" value="tardy" ${status === 'tardy' ? 'checked' : ''} class="w-5 h-5 text-primary-600 focus:ring-primary-500"></td></tr>` }).join('')}</tbody></table></form>`;
+              content.innerHTML = html;
+              document.getElementById('save-attendance-btn').addEventListener('click', () => handleAttendanceSubmit(course.id, today, todaysAttendance?.id));
         }
         
         function renderAttendance() {
@@ -852,19 +874,19 @@
                 const notes = [...state.attendanceNotes].sort((a,b) => b.date.localeCompare(a.date));
                 let notesHtml = `<div class="mb-8"><h3 class="text-xl font-bold text-slate-700 mb-4">Parent Submissions</h3>`;
                 if(notes.length > 0) {
-                     notesHtml += `<div class="space-y-3">${notes.map(note => {
-                         const student = state.students.find(s => s.id === note.studentId);
-                         return `<div class="p-4 rounded-lg bg-yellow-50 border border-yellow-200">
-                                <div class="flex justify-between items-start">
-                                    <div>
-                                        <p class="font-bold text-slate-800">${student?.displayName || 'Unknown Student'}</p>
-                                        <p class="text-sm"><span class="font-semibold capitalize">${note.type}</span> on <span class="font-semibold">${note.date}</span></p>
-                                    </div>
-                                    <p class="text-xs text-slate-500">${note.submittedAt?.toDate().toLocaleDateString()}</p>
-                                </div>
-                                ${note.reason ? `<p class="text-slate-700 mt-2 p-2 bg-yellow-100 rounded">${note.reason}</p>` : ''}
-                         </div>`
-                     }).join('')}</div>`;
+                      notesHtml += `<div class="space-y-3">${notes.map(note => {
+                          const student = state.students.find(s => s.id === note.studentId);
+                          return `<div class="p-4 rounded-lg bg-yellow-50 border border-yellow-200">
+                              <div class="flex justify-between items-start">
+                                  <div>
+                                      <p class="font-bold text-slate-800">${student?.displayName || 'Unknown Student'}</p>
+                                      <p class="text-sm"><span class="font-semibold capitalize">${note.type}</span> on <span class="font-semibold">${note.date}</span></p>
+                                  </div>
+                                  <p class="text-xs text-slate-500">${note.submittedAt?.toDate().toLocaleDateString()}</p>
+                              </div>
+                              ${note.reason ? `<p class="text-slate-700 mt-2 p-2 bg-yellow-100 rounded">${note.reason}</p>` : ''}
+                          </div>`
+                      }).join('')}</div>`;
                 } else {
                     notesHtml += `<p class="text-slate-500">No new attendance notes from parents.</p>`;
                 }
@@ -872,8 +894,8 @@
 
                 const myCourses = state.courses.filter(c => c.teacherId === state.user.id || state.user.role === 'admin');
                 if (myCourses.length === 0) {
-                     content.innerHTML = notesHtml + `<p class="text-slate-500">You are not assigned to teach any courses.</p>`;
-                     return;
+                      content.innerHTML = notesHtml + `<p class="text-slate-500">You are not assigned to teach any courses.</p>`;
+                      return;
                 }
                 let html = notesHtml + `<h3 class="text-xl font-bold text-slate-700 mb-4">Take Daily Attendance</h3><div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">`;
                 html += myCourses.map(course => {
@@ -914,29 +936,29 @@
                     const enrolledCourses = state.courses.filter(c => getEnrolledStudentIds(c.id).includes(studentId));
                     
                     if(enrolledCourses.length === 0) {
-                       html += `<p class="text-slate-500">Not enrolled in any courses.</p>`;
+                        html += `<p class="text-slate-500">Not enrolled in any courses.</p>`;
                     } else {
                        html += enrolledCourses.map(course => {
-                           const assignments = state.assignments.filter(a => a.courseId === course.id);
-                           if (assignments.length === 0) return `<div class="mb-8"><h5 class="text-xl font-bold text-primary-700 mb-2">${course.name}</h5><p class="text-slate-500 text-sm">No assignments yet.</p></div>`;
-                           
-                           let courseHtml = `<div class="mb-8"><h5 class="text-xl font-bold text-primary-700 mb-2">${course.name}</h5>`;
-                           courseHtml += `<ul class="space-y-2">` + assignments.map(a => {
-                               const grade = state.grades.find(g => g.assignmentId === a.id && g.studentId === studentId);
-                               
-                               let gradeDisplay = '';
-                               if (grade?.score) {
-                                   gradeDisplay = `<span class="font-semibold px-3">${grade.score}</span>`;
-                               } else if (state.user.role === 'student') {
-                                   gradeDisplay = `<button onclick="updateGrade('${studentId}', '${a.id}', '${course.id}', 'Submitted', '')" class="bg-green-500 text-white text-xs font-bold py-1 px-3 rounded-full hover:bg-green-600">Submit</button>`;
-                               } else {
-                                   gradeDisplay = `<span class="font-semibold px-3 text-slate-400">Not Graded</span>`;
-                               }
+                            const assignments = state.assignments.filter(a => a.courseId === course.id);
+                            if (assignments.length === 0) return `<div class="mb-8"><h5 class="text-xl font-bold text-primary-700 mb-2">${course.name}</h5><p class="text-slate-500 text-sm">No assignments yet.</p></div>`;
+                            
+                            let courseHtml = `<div class="mb-8"><h5 class="text-xl font-bold text-primary-700 mb-2">${course.name}</h5>`;
+                            courseHtml += `<ul class="space-y-2">` + assignments.map(a => {
+                                const grade = state.grades.find(g => g.assignmentId === a.id && g.studentId === studentId);
+                                
+                                let gradeDisplay = '';
+                                if (grade?.score) {
+                                    gradeDisplay = `<span class="font-semibold px-3">${grade.score}</span>`;
+                                } else if (state.user.role === 'student') {
+                                    gradeDisplay = `<button onclick="updateGrade('${studentId}', '${a.id}', '${course.id}', 'Submitted', '')" class="bg-green-500 text-white text-xs font-bold py-1 px-3 rounded-full hover:bg-green-600">Submit</button>`;
+                                } else {
+                                    gradeDisplay = `<span class="font-semibold px-3 text-slate-400">Not Graded</span>`;
+                                }
 
-                               return `<li class="flex justify-between items-center p-3 bg-slate-50 rounded-md"><span>${a.title}</span>${gradeDisplay}</li>`;
-                           }).join('') + `</ul>`;
-                           return courseHtml + `</div>`;
-                       }).join('');
+                                return `<li class="flex justify-between items-center p-3 bg-slate-50 rounded-md"><span>${a.title}</span>${gradeDisplay}</li>`;
+                            }).join('') + `</ul>`;
+                            return courseHtml + `</div>`;
+                        }).join('');
                     }
                 });
                 content.innerHTML = html;
@@ -998,9 +1020,9 @@
                  if(!calendarEl || !state.courses) return;
                  const studentIds = state.user.role === 'parent' ? state.user.childrenIds || [] : [state.user.id];
                  const myCourseIds = state.courses.filter(c => {
-                    if (state.user.role === 'admin' || state.user.role === 'teacher') return true;
-                    const enrolledIds = getEnrolledStudentIds(c.id);
-                    return studentIds.some(sid => enrolledIds.includes(sid));
+                     if (state.user.role === 'admin' || state.user.role === 'teacher') return true;
+                     const enrolledIds = getEnrolledStudentIds(c.id);
+                     return studentIds.some(sid => enrolledIds.includes(sid));
                  }).map(c => c.id);
 
                  const assignmentEvents = state.assignments.filter(a => myCourseIds.includes(a.courseId)).map(a => ({ title: `Due: ${a.title}`, start: a.dueDate, allDay: true, backgroundColor: '#ef4444' }));
@@ -1261,13 +1283,13 @@
                     <button onclick="openGradingPeriodModal()" class="bg-primary-500 text-white font-bold py-2 px-3 rounded-lg text-sm hover:bg-primary-600">Add Period</button>
                 </div>
                 ${state.gradingPeriods.sort((a,b) => new Date(a.startDate) - new Date(b.startDate)).map(p => `
-                     <div class="flex justify-between items-center p-3 bg-slate-50 rounded-lg mb-2">
-                         <p class="font-semibold">${p.name} <span class="font-normal text-slate-500">(${p.startDate} to ${p.endDate})</span></p>
-                         <div>
-                            <button onclick="openGradingPeriodModal('${p.id}')" class="text-yellow-600 hover:underline text-sm">Edit</button>
-                            <button onclick="deleteGradingPeriod('${p.id}')" class="text-red-600 hover:underline text-sm ml-2">Delete</button>
-                         </div>
-                     </div>
+                       <div class="flex justify-between items-center p-3 bg-slate-50 rounded-lg mb-2">
+                           <p class="font-semibold">${p.name} <span class="font-normal text-slate-500">(${p.startDate} to ${p.endDate})</span></p>
+                           <div>
+                                <button onclick="openGradingPeriodModal('${p.id}')" class="text-yellow-600 hover:underline text-sm">Edit</button>
+                                <button onclick="deleteGradingPeriod('${p.id}')" class="text-red-600 hover:underline text-sm ml-2">Delete</button>
+                           </div>
+                       </div>
                 `).join('') || '<p class="text-slate-500">No grading periods created yet.</p>'}
             </div>`;
             content.innerHTML = dayTypesHtml + gradingPeriodsHtml;
