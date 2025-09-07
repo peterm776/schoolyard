@@ -203,7 +203,6 @@
                 const schoolId = userDoc.ref.parent.parent.id;
 
                 if (userDoc.data().isPlaceholder) {
-                    // This is the account activation flow, now using a transaction
                     try {
                         await runTransaction(db, async (transaction) => {
                             const placeholderRef = userDoc.ref;
@@ -223,13 +222,12 @@
                     } catch (e) {
                         console.error("Activation transaction failed: ", e);
                         showToast(`Account activation failed: ${e.message}`, 'error');
-                        await signOut(auth); // Log out if activation fails
+                        await signOut(auth);
                     }
                 } else {
                     await loginToSchool(userDoc.id, schoolId);
                 }
             } else {
-                // No existing user found with this email, user might be creating a new school
                 state.user = { uid: user.uid, displayName: user.displayName, email: user.email, isNew: true };
                 state.school = null;
                 router();
@@ -1115,6 +1113,7 @@
                 const newDisplayName = e.target.elements.displayName.value;
                 if (newDisplayName === state.user.displayName) return; // Don't save if no changes
                 try {
+                    // This update is now protected by the new, more specific security rule
                     await updateDoc(doc(db, 'schools', state.school.id, 'users', state.user.id), { displayName: newDisplayName });
                     if(auth.currentUser && auth.currentUser.displayName !== newDisplayName) {
                          await updateProfile(auth.currentUser, { displayName: newDisplayName });
