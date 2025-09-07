@@ -62,8 +62,11 @@
             color: var(--primary-500); 
             background-color: rgb(var(--primary-100));
         }
-        .report-card, .printable-report { border: 1px solid #ddd; padding: 24px; font-family: 'Times New Roman', serif; color: black; }
-        .report-card h1, .report-card h2, .report-card h3, .printable-report h1, .printable-report h2, .printable-report h3 { color: black; }
+        .printable-report { border: 1px solid #ddd; padding: 24px; font-family: 'Times New Roman', serif; color: black; }
+        .printable-report h1, .printable-report h2, .printable-report h3 { color: black; }
+        .printable-schedule-table { border-collapse: collapse; width: 100%; }
+        .printable-schedule-table th, .printable-schedule-table td { border: 1px solid #ccc; padding: 8px; text-align: center; }
+        .printable-schedule-table th { background-color: #f2f2f2; }
         .page-break { page-break-after: always; }
     </style>
 </head>
@@ -197,7 +200,6 @@
             }
         });
 
-        // SECURE LOGIN & ACTIVATION FLOW
         async function findUserSchoolAndLogin(user) {
             const userQueryByEmail = query(collectionGroup(db, 'users'), where('email', '==', user.email));
             const userSnapshotByEmail = await getDocs(userQueryByEmail);
@@ -207,20 +209,15 @@
                 const schoolId = userDoc.ref.parent.parent.id;
 
                 if (userDoc.data().isPlaceholder) {
-                    // This is the signup/activation flow for an invited user.
-                    // The user is already authenticated via Firebase Auth at this point.
                     try {
                         await runTransaction(db, async (transaction) => {
                             const placeholderRef = userDoc.ref;
                             const newUserRef = doc(db, 'schools', schoolId, 'users', user.uid);
-                            
                             const pDoc = await transaction.get(placeholderRef);
                             if (!pDoc.exists()) {
                                 throw new Error("This invitation has already been used or is invalid.");
                             }
                             const userData = pDoc.data();
-                            
-                            // Create the new user document and delete the placeholder.
                             transaction.set(newUserRef, { ...userData, uid: user.uid, displayName: user.displayName || userData.displayName, isPlaceholder: false, createdAt: serverTimestamp() });
                             transaction.delete(placeholderRef);
                         });
@@ -229,27 +226,20 @@
                     } catch (e) {
                         console.error("Activation transaction failed: ", e);
                         showToast(`Account activation failed: ${e.message}. Please contact your administrator.`, 'error');
-                        await signOut(auth); // Log out the user since activation failed.
+                        await signOut(auth);
                     }
                 } else {
-                    // This is the regular login flow for an existing, active user.
                     if (userDoc.id !== user.uid) {
-                        // This case is rare but important: an admin invited a user,
-                        // but that user created a school themselves with the same email.
                         throw new Error("User account mismatch. An account with this email already exists.");
                     }
                     await loginToSchool(userDoc.id, schoolId);
                 }
             } else {
-                // User signed in, but has no placeholder and no user document.
-                // This means they signed up without an invitation or are creating a new school.
-                // If they are on the create-school page, we let it proceed. Otherwise, we log them out.
                 const [page] = getRoute();
                 if (page !== 'create-school') {
                     showToast("No invitation found for this email address.", "error");
                     await signOut(auth);
                 } else {
-                    // Allow the create-school view to render for this new user
                     router();
                 }
             }
@@ -302,7 +292,6 @@
             const [page, idParts, params] = getRoute();
 
             if (auth.currentUser && state.school) {
-                // User is fully logged in to a school
                 if (!document.getElementById('main-content')) {
                     outlet.innerHTML = templates.appView;
                 }
@@ -316,7 +305,6 @@
                     routes[defaultRoute].render();
                 }
             } else {
-                // User is not logged in OR is logged in but not associated with a school yet
                 outlet.innerHTML = templates.authView;
                 const authRoutes = {
                     'login': renderLoginView,
@@ -391,7 +379,6 @@
             document.getElementById('signup-form').addEventListener('submit', handleSignupSubmit);
         }
 
-        // SECURE SIGNUP LOGIC
         async function handleSignupSubmit(e) {
             e.preventDefault();
             const formData = new FormData(e.target);
@@ -401,12 +388,8 @@
             submitBtn.innerHTML = "Signing Up...";
 
             try {
-                // Step 1: Immediately create the Auth user.
                 const userCredential = await createUserWithEmailAndPassword(auth, data.email, data.password);
                 await updateProfile(userCredential.user, { displayName: data.displayName });
-                
-                // Step 2: onAuthStateChanged will now fire and run findUserSchoolAndLogin,
-                // which will handle the invitation check and account activation.
                 showToast('Account created! Checking for invitation...', 'success');
             } catch(err) {
                 showToast(`Signup failed: ${err.message}`, 'error');
@@ -447,9 +430,6 @@
             e.preventDefault();
             const formData = new FormData(e.target);
             const data = Object.fromEntries(formData.entries());
-
-            // If the user is already authenticated (e.g., from a failed signup),
-            // we proceed to create the school documents. Otherwise, we create the Auth user first.
             let user = auth.currentUser;
             const submitBtn = e.target.querySelector('button[type="submit"]');
             submitBtn.disabled = true;
@@ -457,13 +437,11 @@
             
             try {
                 if (!user || user.email !== data.email) {
-                    // Create the Firebase Auth user if they don't exist or email doesn't match
                     const userCredential = await createUserWithEmailAndPassword(auth, data.email, data.password);
                     user = userCredential.user;
                     await updateProfile(user, { displayName: data.displayName });
                 }
 
-                // Step 2: Create the school document in Firestore
                 const schoolRef = await addDoc(collection(db, 'schools'), { 
                     name: data.schoolName, 
                     theme: 'sky', 
@@ -471,7 +449,6 @@
                     createdAt: serverTimestamp() 
                 });
 
-                // Step 3: Create the admin user document in the new school's subcollection
                 await setDoc(doc(db, 'schools', schoolRef.id, 'users', user.uid), { 
                     uid: user.uid, 
                     displayName: data.displayName, 
@@ -482,7 +459,6 @@
                 });
                 
                 showToast('School created successfully! You are now logged in.', 'success');
-                // onAuthStateChanged will handle the rest.
             } catch (error) {
                 console.error("Error creating school:", error);
                 showToast(`Could not create school: ${error.message}`, 'error');
@@ -1062,10 +1038,15 @@
             
             const scheduleDoc = state.schedules.find(s => s.studentId === studentId);
             const currentSchedule = scheduleDoc ? scheduleDoc.schedule : {};
-            const courseOptions = state.courses.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
-
+            
             let html = `
-                <div class="mb-6"><a href="#/users" class="text-primary-600 hover:underline">&larr; Back to all users</a></div>
+                <div class="flex justify-between items-center mb-6">
+                    <a href="#/users" class="text-primary-600 hover:underline">&larr; Back to all users</a>
+                    <button type="button" onclick="openPrintableScheduleModal('${studentId}')" class="bg-indigo-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-indigo-700 flex items-center">
+                        <svg class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" /></svg>
+                        Print Schedule
+                    </button>
+                </div>
                 <form id="schedule-form">
                     <div class="space-y-8">
             `;
@@ -1189,7 +1170,7 @@
                 const tabs = [ 
                     { id: 'enrollment', name: 'Enrollment' }, 
                     { id: 'attendance', name: 'Attendance' },
-                    { id: 'schedules', name: 'Schedules' },
+                    { id: 'schedules', name: 'Student Schedules' },
                     { id: 'grades', name: 'Grade Distribution' },
                     { id: 'tuition', name: 'Tuition Statements'}
                 ];
@@ -1199,7 +1180,6 @@
                         <div class="flex border-b overflow-x-auto">
                             ${tabs.map(tab => `<a href="#/reports?tab=${tab.id}" class="report-tab p-4 border-b-2 ${currentTab === tab.id ? 'active' : ''}">${tab.name}</a>`).join('')}
                         </div>
-                        <button id="pdf-report-btn" class="bg-red-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-red-600 flex items-center"><svg class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>Download PDF</button>
                     </div>
                     <div id="reports-content"></div>`;
 
@@ -1406,36 +1386,37 @@
         function renderEnrollmentReport() {
             const reportsContent = document.getElementById('reports-content');
             if(!reportsContent) return;
-            let tableHtml = `<table class="min-w-full bg-white"><thead class="bg-slate-100"><tr>
-                <th class="py-2 px-3 text-left">Course Name</th>
-                <th class="py-2 px-3 text-left">Teacher</th>
-                <th class="py-2 px-3 text-center"># Students</th>
-                </tr></thead><tbody>`;
-            state.courses.forEach(course => {
-                const teacher = state.teachers.find(t => t.id === course.teacherId);
-                const studentCount = getEnrolledStudentIds(course.id).length;
-                tableHtml += `<tr class="border-b">
-                    <td class="py-2 px-3">${course.name}</td>
-                    <td class="py-2 px-3">${teacher?.displayName || 'N/A'}</td>
-                    <td class="py-2 px-3 text-center">${studentCount}</td>
-                </tr>`;
-            });
-            tableHtml += `</tbody></table>`;
-
-            reportsContent.innerHTML = `<div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-                <div class="bg-slate-50 p-4 rounded-lg">
-                    <h3 class="text-lg font-bold text-slate-700 mb-2">Total Students</h3>
-                    <p class="text-4xl font-bold text-primary-600">${state.students.length}</p>
-                </div>
-                <div class="bg-slate-50 p-4 rounded-lg">
-                    <h3 class="text-lg font-bold text-slate-700 mb-2">Total Courses</h3>
-                    <p class="text-4xl font-bold text-primary-600">${state.courses.length}</p>
-                </div>
-            </div>
-            <h3 class="text-xl font-bold text-slate-700 mb-4">Enrollment by Course</h3>
-            ${tableHtml}`;
             
-            document.getElementById('pdf-report-btn').onclick = generateEnrollmentPdf;
+            let reportHtml = `<div id="printable-area">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                    <div class="bg-slate-50 p-4 rounded-lg">
+                        <h3 class="text-lg font-bold text-slate-700 mb-2">Total Students</h3>
+                        <p class="text-4xl font-bold text-primary-600">${state.students.length}</p>
+                    </div>
+                    <div class="bg-slate-50 p-4 rounded-lg">
+                        <h3 class="text-lg font-bold text-slate-700 mb-2">Total Courses</h3>
+                        <p class="text-4xl font-bold text-primary-600">${state.courses.length}</p>
+                    </div>
+                </div>
+                <h3 class="text-xl font-bold text-slate-700 mb-4">Enrollment by Course</h3>
+                <table class="min-w-full bg-white"><thead class="bg-slate-100"><tr>
+                    <th class="py-2 px-3 text-left">Course Name</th>
+                    <th class="py-2 px-3 text-left">Teacher</th>
+                    <th class="py-2 px-3 text-center"># Students</th>
+                </tr></thead><tbody>
+                ${state.courses.map(course => {
+                    const teacher = state.teachers.find(t => t.id === course.teacherId);
+                    const studentCount = getEnrolledStudentIds(course.id).length;
+                    return `<tr class="border-b">
+                        <td class="py-2 px-3">${course.name}</td>
+                        <td class="py-2 px-3">${teacher?.displayName || 'N/A'}</td>
+                        <td class="py-2 px-3 text-center">${studentCount}</td>
+                    </tr>`;
+                }).join('')}
+                </tbody></table>
+            </div>`;
+
+            reportsContent.innerHTML = reportHtml + `<div class="mt-6 flex justify-end"><button onclick="generatePdfFromHtml('printable-area', 'Enrollment Report')" class="bg-red-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-red-600 flex items-center"><svg class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>Download PDF</button></div>`;
         }
 
         function renderAttendanceReport() {
@@ -1453,7 +1434,7 @@
 
             const sortedDates = Object.keys(attendanceByDate).sort().reverse();
             
-            let html = `<h3 class="text-xl font-bold text-slate-700 mb-4">Daily Attendance Summary</h3>`;
+            let html = `<div id="printable-area"><h3 class="text-xl font-bold text-slate-700 mb-4">Daily Attendance Summary</h3>`;
             if(sortedDates.length === 0) {
                 html += `<p class="text-slate-500">No attendance data has been recorded yet.</p>`;
             } else {
@@ -1467,23 +1448,26 @@
                     </div>
                 `).join('')}</div>`;
             }
-            reportsContent.innerHTML = html;
-            document.getElementById('pdf-report-btn').onclick = generateAttendancePdf;
+            html += `</div>`;
+            reportsContent.innerHTML = html + `<div class="mt-6 flex justify-end"><button onclick="generatePdfFromHtml('printable-area', 'Attendance Report')" class="bg-red-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-red-600 flex items-center"><svg class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>Download PDF</button></div>`;
         }
         
-        // MORE REPORTS HERE...
         function renderScheduleReport() {
             const reportsContent = document.getElementById('reports-content');
             if(!reportsContent) return;
-            reportsContent.innerHTML = `<p class="text-slate-500">Select a student to view their printable schedule.</p>` +
-                state.students.map(s => `<a href="#/schedule/${s.id}" class="block p-2 bg-slate-50 hover:bg-primary-100 rounded my-1">${s.displayName}</a>`).join('');
-            document.getElementById('pdf-report-btn').onclick = () => showToast('Please select a student to print a schedule.', 'error');
+            let html = `<h3 class="text-xl font-bold text-slate-700 mb-4">View & Print Student Schedules</h3>`;
+            html += `<p class="text-slate-500 mb-4">Select a student to view their printable schedule. You can download a PDF from the schedule view.</p>`;
+            html += `<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">` +
+                state.students.map(s => `<a href="#/schedule/${s.id}" class="block p-4 bg-slate-50 hover:bg-primary-100 rounded-lg shadow-sm transition-colors font-semibold text-slate-800">${s.displayName}</a>`).join('') +
+                `</div>`;
+            reportsContent.innerHTML = html;
         }
 
         function renderGradeDistributionReport() {
             const reportsContent = document.getElementById('reports-content');
             if(!reportsContent) return;
-            reportsContent.innerHTML = `<h3 class="text-xl font-bold text-slate-700 mb-4">Grade Averages by Course</h3>` +
+            
+            let html = `<div id="printable-area"><h3 class="text-xl font-bold text-slate-700 mb-4">Grade Averages by Course</h3>` +
             state.courses.map(course => {
                 const enrolledStudentIds = getEnrolledStudentIds(course.id);
                 const courseGrades = state.grades.filter(g => g.courseId === course.id && enrolledStudentIds.includes(g.studentId))
@@ -1493,8 +1477,8 @@
                     <p class="font-semibold">${course.name}</p>
                     <p class="text-2xl font-bold text-primary-600">${avg}</p>
                 </div>`
-            }).join('');
-             document.getElementById('pdf-report-btn').onclick = generateGradeDistributionPdf;
+            }).join('') + `</div>`;
+             reportsContent.innerHTML = html + `<div class="mt-6 flex justify-end"><button onclick="generatePdfFromHtml('printable-area', 'Grade Distribution Report')" class="bg-red-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-red-600 flex items-center"><svg class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>Download PDF</button></div>`;
         }
 
         function renderAdminTuitionReport() {
@@ -1522,7 +1506,6 @@
             }).join('') + `</div>`;
 
             reportsContent.innerHTML = html;
-            document.getElementById('pdf-report-btn').onclick = () => showToast('Please generate an individual statement to print.', 'error');
         }
 
         function renderReportCardGenerator() {
@@ -1673,7 +1656,6 @@
                         await updateDoc(doc(db, 'schools', state.school.id, 'users', userId), data);
                         showToast('User updated!', 'success');
                     } else {
-                        // Creating a placeholder user (invite)
                         await addDoc(collection(db, 'schools', state.school.id, 'users'), { ...data, isPlaceholder: true, uid: '' });
                         showToast('User invited! They must sign in to activate.', 'success');
                     }
@@ -1708,7 +1690,7 @@
                     await setDoc(doc(db, 'schools', state.school.id, 'schedules', studentId), {
                         studentId: studentId,
                         schedule: scheduleData
-                    }, { merge: true }); // Use merge to avoid overwriting other fields if they exist
+                    }, { merge: true });
                     showToast('Schedule saved successfully!', 'success');
                     window.location.hash = '#/users';
                 } catch (err) {
@@ -1893,7 +1875,7 @@
                 }
 
                 let title = `Report Card for ${rc.studentName}`;
-                let body = `<div id="report-card-content" class="report-card">
+                let body = `<div id="printable-area" class="printable-report">
                     <div class="text-center mb-6">
                         ${state.school.logoUrl ? `<img src="${state.school.logoUrl}" class="mx-auto h-16 mb-2">` : ''}
                         <h1 class="text-3xl">${state.school.name}</h1>
@@ -1906,81 +1888,52 @@
                     ${gradesHtml}
                     ${attendanceHtml}
                 </div>
-                <button onclick="generateReportCardPdf()" class="mt-4 w-full bg-red-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-red-600">Download PDF</button>
+                <button onclick="generatePdfFromHtml('printable-area', 'Report Card')" class="mt-4 w-full bg-red-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-red-600">Download PDF</button>
                 `;
                 openModal(title, body, '5xl');
             },
             
-            generateEnrollmentPdf: () => {
+            generatePdfFromHtml: async (elementId, pdfTitle) => {
                 const { jsPDF } = window.jspdf;
-                const doc = new jsPDF();
-                const head = [['Course Name', 'Teacher', '# Students']];
-                const body = state.courses.map(course => {
-                    const teacher = state.teachers.find(t => t.id === course.teacherId);
-                    const studentCount = getEnrolledStudentIds(course.id).length;
-                    return [course.name, teacher?.displayName || 'N/A', studentCount];
-                });
-                doc.text("Enrollment Report", 14, 16);
-                doc.text(`Generated on: ${new Date().toLocaleDateString()}`, 14, 22)
-                doc.autoTable({ head, body, startY: 30 });
-                doc.output('dataurlnewwindow');
-            },
-            generateAttendancePdf: () => {
-                const { jsPDF } = window.jspdf;
-                const doc = new jsPDF();
-                const attendanceByDate = {};
-                state.attendance.forEach(record => {
-                    if(!attendanceByDate[record.date]) attendanceByDate[record.date] = { absent: new Set(), tardy: new Set() };
-                    Object.entries(record.statuses).forEach(([studentId, status]) => {
-                        if (status === 'absent') attendanceByDate[record.date].absent.add(studentId);
-                        if (status === 'tardy') attendanceByDate[record.date].tardy.add(studentId);
-                    });
-                });
-                const sortedDates = Object.keys(attendanceByDate).sort().reverse();
-
-                const head = [['Date', 'Absences', 'Tardies']];
-                const body = sortedDates.map(date => [
-                    new Date(date + 'T00:00:00').toDateString(),
-                    attendanceByDate[date].absent.size,
-                    attendanceByDate[date].tardy.size
-                ]);
-                doc.text("Attendance Summary Report", 14, 16);
-                doc.text(`Generated on: ${new Date().toLocaleDateString()}`, 14, 22)
-                doc.autoTable({ head, body, startY: 30 });
-                doc.output('dataurlnewwindow');
-            },
-            generateGradeDistributionPdf: () => {
-                const { jsPDF } = window.jspdf;
-                const doc = new jsPDF();
-                const head = [['Course', 'Average Grade']];
-                const body = state.courses.map(course => {
-                    const enrolledStudentIds = getEnrolledStudentIds(course.id);
-                    const courseGrades = state.grades.filter(g => g.courseId === course.id && enrolledStudentIds.includes(g.studentId))
-                                            .map(g => parseFloat(g.score)).filter(s => !isNaN(s));
-                    const avg = courseGrades.length > 0 ? (courseGrades.reduce((a,b) => a+b, 0) / courseGrades.length).toFixed(2) : 'N/A';
-                    return [course.name, avg];
-                });
-                doc.text("Grade Distribution Report", 14, 16);
-                doc.text(`Generated on: ${new Date().toLocaleDateString()}`, 14, 22)
-                doc.autoTable({ head, body, startY: 30 });
-                doc.output('dataurlnewwindow');
-            },
-            generateReportCardPdf: () => {
-                const { jsPDF } = window.jspdf;
-                const reportContent = document.getElementById('report-card-content');
+                const reportContent = document.getElementById(elementId);
                 if(!reportContent) return showToast('Could not find report content.', 'error');
 
-                html2canvas(reportContent).then(canvas => {
-                    const imgData = canvas.toDataURL('image/png');
-                    const pdf = new jsPDF({
-                        orientation: 'portrait',
-                        unit: 'pt',
-                        format: [canvas.width, canvas.height]
-                    });
-                    pdf.addImage(imgData, 'PNG', 0, 0, canvas.width, canvas.height);
-                    pdf.output('dataurlnewwindow');
-                });
+                const canvas = await html2canvas(reportContent);
+                const imgData = canvas.toDataURL('image/png');
+
+                const pdf = new jsPDF('p', 'pt', 'letter');
+                const pdfWidth = pdf.internal.pageSize.getWidth();
+                const pdfHeight = pdf.internal.pageSize.getHeight();
+                const margin = 40;
+
+                const contentWidth = pdfWidth - (margin * 2);
+                const contentHeight = pdfHeight - (margin * 2) - 60; // Extra space for header
+
+                const canvasWidth = canvas.width;
+                const canvasHeight = canvas.height;
+                const canvasAspectRatio = canvasWidth / canvasHeight;
+
+                let finalWidth = contentWidth;
+                let finalHeight = finalWidth / canvasAspectRatio;
+
+                if (finalHeight > contentHeight) {
+                    finalHeight = contentHeight;
+                    finalWidth = finalHeight * canvasAspectRatio;
+                }
+                
+                // Add Header
+                pdf.setFontSize(18);
+                pdf.text(state.school.name, margin, margin);
+                pdf.setFontSize(14);
+                pdf.text(pdfTitle, margin, margin + 20);
+                pdf.setFontSize(10);
+                pdf.text(`Generated on: ${new Date().toLocaleDateString()}`, pdfWidth - margin, margin, { align: 'right' });
+
+                // Add content image
+                pdf.addImage(imgData, 'PNG', margin, margin + 60, finalWidth, finalHeight);
+                pdf.output('dataurlnewwindow');
             },
+            
             openPaymentModal: () => {
                 const studentIds = state.user.role === 'parent' ? state.user.childrenIds || [] : [state.user.id];
                 const myTuitionItems = state.tuitionItems.filter(item => studentIds.includes(item.studentId));
@@ -2036,7 +1989,7 @@
 
                 const title = `Annual Statement for ${targetParent.displayName}`;
                 const body = `
-                    <div id="statement-content" class="report-card text-sm">
+                    <div id="printable-area" class="printable-report text-sm">
                         <div class="text-center mb-6">
                             ${state.school.logoUrl ? `<img src="${state.school.logoUrl}" class="mx-auto h-16 mb-2">` : ''}
                             <h1 class="text-3xl">${state.school.name}</h1>
@@ -2065,25 +2018,62 @@
                             </tfoot>
                         </table>
                     </div>
-                    <button onclick="generateParentStatementPdf()" class="mt-4 w-full bg-red-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-red-600">Download PDF</button>
+                    <button onclick="generatePdfFromHtml('printable-area', 'Tuition Statement')" class="mt-4 w-full bg-red-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-red-600">Download PDF</button>
                 `;
                 openModal(title, body, '5xl');
             },
-            generateParentStatementPdf: () => {
-                const { jsPDF } = window.jspdf;
-                const reportContent = document.getElementById('statement-content');
-                if (!reportContent) return showToast('Could not find statement content.', 'error');
+            openPrintableScheduleModal: (studentId) => {
+                const student = state.students.find(s => s.id === studentId);
+                if (!student) return showToast('Student not found.', 'error');
+                
+                const title = `Schedule for ${student.displayName}`;
+                const body = `
+                    <div id="printable-schedule-content" class="printable-report">
+                        </div>
+                    <button onclick="generatePdfFromHtml('printable-schedule-content', 'Student Schedule')" class="mt-4 w-full bg-red-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-red-600">Download PDF</button>
+                `;
+                openModal(title, body, '6xl');
+                renderPrintableSchedule(studentId);
+            },
+            renderPrintableSchedule: (studentId) => {
+                const student = state.students.find(s => s.id === studentId);
+                const scheduleData = state.schedules.find(s => s.studentId === studentId)?.schedule || {};
+                const contentEl = document.getElementById('printable-schedule-content');
+                if (!contentEl) return;
 
-                html2canvas(reportContent).then(canvas => {
-                    const imgData = canvas.toDataURL('image/png');
-                    const pdf = new jsPDF({
-                        orientation: 'portrait',
-                        unit: 'pt',
-                        format: [canvas.width, canvas.height]
+                // Gather all unique time blocks and sort them
+                const allTimeBlocks = state.dayTypes.reduce((acc, dt) => {
+                    const blocks = state.timeBlocks.filter(tb => tb.dayTypeId === dt.id);
+                    return acc.concat(blocks);
+                }, []);
+                const uniqueTimeSlots = [...new Map(allTimeBlocks.map(item => [`${item.startTime}-${item.endTime}`, item])).values()]
+                    .sort((a,b) => a.startTime.localeCompare(b.startTime));
+                
+                let html = `<div class="text-center mb-6">
+                                <h1 class="text-3xl">${state.school.name}</h1>
+                                <h2 class="text-2xl">Student Schedule: ${student.displayName}</h2>
+                            </div>`;
+                html += `<table class="printable-schedule-table"><thead><tr><th>Time</th>`;
+                state.dayTypes.forEach(dt => { html += `<th>${dt.name}</th>`; });
+                html += `</tr></thead><tbody>`;
+
+                uniqueTimeSlots.forEach(slot => {
+                    html += `<tr><td><strong>${slot.name}</strong><br>${slot.startTime} - ${slot.endTime}</td>`;
+                    state.dayTypes.forEach(dt => {
+                        const blockInDay = state.timeBlocks.find(tb => tb.dayTypeId === dt.id && tb.startTime === slot.startTime);
+                        let cellContent = '';
+                        if (blockInDay && scheduleData[blockInDay.id]) {
+                            const course = state.courses.find(c => c.id === scheduleData[blockInDay.id]);
+                            const teacher = state.teachers.find(t => t.id === course?.teacherId);
+                            cellContent = `<strong>${course?.name || ''}</strong><br><span class="text-sm">${teacher?.displayName || ''}</span>`;
+                        }
+                        html += `<td>${cellContent}</td>`;
                     });
-                    pdf.addImage(imgData, 'PNG', 0, 0, canvas.width, canvas.height);
-                    pdf.output('dataurlnewwindow');
+                    html += `</tr>`;
                 });
+
+                html += `</tbody></table>`;
+                contentEl.innerHTML = html;
             }
         });
     </script>
