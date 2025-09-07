@@ -63,8 +63,8 @@
             color: var(--primary-500); 
             background-color: rgb(var(--primary-100));
         }
-        .report-card { border: 1px solid #ddd; padding: 24px; font-family: 'Times New Roman', serif; color: black; }
-        .report-card h1, .report-card h2, .report-card h3 { color: black; }
+        .report-card, .printable-schedule { border: 1px solid #ddd; padding: 24px; font-family: 'Times New Roman', serif; color: black; }
+        .report-card h1, .report-card h2, .report-card h3, .printable-schedule h1, .printable-schedule h2, .printable-schedule h3 { color: black; }
     </style>
 </head>
 <body class="bg-slate-100 antialiased">
@@ -1186,7 +1186,12 @@
 
             if (state.user.role === 'admin') {
                 const currentTab = params.get('tab') || 'enrollment';
-                const tabs = [ { id: 'enrollment', name: 'Enrollment' }, { id: 'attendance', name: 'Attendance' } ];
+                const tabs = [ 
+                    { id: 'enrollment', name: 'Enrollment' }, 
+                    { id: 'attendance', name: 'Attendance' },
+                    { id: 'schedules', name: 'Schedules' },
+                    { id: 'grades', name: 'Grade Distribution' }
+                ];
                 
                 content.innerHTML = `
                     <div class="flex justify-between items-center mb-6">
@@ -1197,7 +1202,12 @@
                     </div>
                     <div id="reports-content"></div>`;
 
-                const tabRenderers = { 'enrollment': renderEnrollmentReport, 'attendance': renderAttendanceReport };
+                const tabRenderers = { 
+                    'enrollment': renderEnrollmentReport, 
+                    'attendance': renderAttendanceReport,
+                    'schedules': renderScheduleReport,
+                    'grades': renderGradeDistributionReport,
+                };
                 (tabRenderers[currentTab] || tabRenderers.enrollment)();
             } else if (state.user.role === 'parent') {
                 renderParentTuitionReport();
