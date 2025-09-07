@@ -63,8 +63,9 @@
             color: var(--primary-500); 
             background-color: rgb(var(--primary-100));
         }
-        .report-card, .printable-schedule { border: 1px solid #ddd; padding: 24px; font-family: 'Times New Roman', serif; color: black; }
-        .report-card h1, .report-card h2, .report-card h3, .printable-schedule h1, .printable-schedule h2, .printable-schedule h3 { color: black; }
+        .report-card, .printable-report { border: 1px solid #ddd; padding: 24px; font-family: 'Times New Roman', serif; color: black; }
+        .report-card h1, .report-card h2, .report-card h3, .printable-report h1, .printable-report h2, .printable-report h3 { color: black; }
+        .page-break { page-break-after: always; }
     </style>
 </head>
 <body class="bg-slate-100 antialiased">
@@ -1190,7 +1191,8 @@
                     { id: 'enrollment', name: 'Enrollment' }, 
                     { id: 'attendance', name: 'Attendance' },
                     { id: 'schedules', name: 'Schedules' },
-                    { id: 'grades', name: 'Grade Distribution' }
+                    { id: 'grades', name: 'Grade Distribution' },
+                    { id: 'tuition', name: 'Tuition Statements'}
                 ];
                 
                 content.innerHTML = `
@@ -1207,6 +1209,7 @@
                     'attendance': renderAttendanceReport,
                     'schedules': renderScheduleReport,
                     'grades': renderGradeDistributionReport,
+                    'tuition': renderAdminTuitionReport,
                 };
                 (tabRenderers[currentTab] || tabRenderers.enrollment)();
             } else if (state.user.role === 'parent') {
