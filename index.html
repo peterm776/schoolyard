@@ -1109,13 +1109,19 @@
         function renderProfile() {
             setPageTitle('Profile');
             const content = document.getElementById('content');
-            if(!content) return;
+            if (!content) return;
+
+            const isParent = state.user.role === 'parent';
+
             content.innerHTML = `<div class="bg-slate-50 p-6 rounded-lg max-w-md mx-auto">
                 <form id="profile-form">
                     <div class="space-y-4">
                         <div>
                             <label class="block font-semibold text-slate-700">Full Name</label>
-                            <input type="text" name="displayName" value="${state.user.displayName}" class="w-full p-2 border rounded-lg mt-1">
+                            <input type="text" name="displayName" value="${state.user.displayName}" 
+                                   class="w-full p-2 border rounded-lg mt-1 ${isParent ? 'bg-slate-100 cursor-not-allowed' : ''}" 
+                                   ${isParent ? 'readonly' : ''}>
+                            ${isParent ? `<p class="text-xs text-slate-500 mt-1">Parent names must be changed by a school administrator.</p>` : ''}
                         </div>
                         <div>
                             <label class="block font-semibold text-slate-700">Email</label>
@@ -1125,25 +1131,27 @@
                             <label class="block font-semibold text-slate-700">Role</label>
                             <p class="mt-2 inline-block bg-primary-100 text-primary-700 font-semibold px-3 py-1 rounded-full text-sm capitalize">${state.user.role}</p>
                         </div>
-                         <button type="submit" class="w-full bg-primary-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-primary-600">Save Changes</button>
+                        ${!isParent ? `<button type="submit" class="w-full bg-primary-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-primary-600">Save Changes</button>` : ''}
                     </div>
                 </form>
             </div>`;
 
-            document.getElementById('profile-form').addEventListener('submit', async (e) => {
-                e.preventDefault();
-                const newDisplayName = e.target.elements.displayName.value;
-                if (newDisplayName === state.user.displayName) return;
-                try {
-                    await updateDoc(doc(db, 'schools', state.school.id, 'users', state.user.id), { displayName: newDisplayName });
-                    if(auth.currentUser && auth.currentUser.displayName !== newDisplayName) {
-                         await updateProfile(auth.currentUser, { displayName: newDisplayName });
+            if (!isParent) {
+                document.getElementById('profile-form').addEventListener('submit', async (e) => {
+                    e.preventDefault();
+                    const newDisplayName = e.target.elements.displayName.value;
+                    if (newDisplayName === state.user.displayName) return;
+                    try {
+                        await updateDoc(doc(db, 'schools', state.school.id, 'users', state.user.id), { displayName: newDisplayName });
+                        if (auth.currentUser && auth.currentUser.displayName !== newDisplayName) {
+                            await updateProfile(auth.currentUser, { displayName: newDisplayName });
+                        }
+                        showToast('Profile updated!', 'success');
+                    } catch (err) {
+                        showToast(`Error updating profile: ${err.message}`, 'error');
                     }
-                    showToast('Profile updated!', 'success');
-                } catch(err) {
-                    showToast(`Error updating profile: ${err.message}`, 'error');
-                }
-            });
+                });
+            }
         }
 
         function renderSettings(idParts, params) {
@@ -1282,6 +1290,7 @@
                             <p class="font-semibold">${dt.name}</p>
                             <div>
                                 <button onclick="openDayTypeModal('${dt.id}')" class="text-yellow-600 hover:underline text-sm">Edit</button>
+                                <button onclick="duplicateDayType('${dt.id}')" class="text-blue-600 hover:underline text-sm ml-2">Duplicate</button>
                                 <button onclick="deleteDayType('${dt.id}')" class="text-red-600 hover:underline text-sm ml-2">Delete</button>
                             </div>
                         </div>
@@ -1479,7 +1488,10 @@
                         <p class="font-bold">${rc.studentName}</p>
                         <p class="text-sm text-slate-600">${rc.periodName}</p>
                         <p class="text-xs text-slate-400">Generated: ${rc.generatedAt?.toDate().toLocaleDateString()}</p>
-                        <button onclick="openReportCardModal('${rc.id}')" class="mt-2 text-sm text-primary-600 hover:underline">View Report</button>
+                        <div class="mt-2">
+                            <button onclick="openReportCardModal('${rc.id}')" class="text-sm text-primary-600 hover:underline">View</button>
+                            <button onclick="deleteReportCard('${rc.id}')" class="ml-2 text-sm text-red-600 hover:underline">Delete</button>
+                        </div>
                     </div>
                 `).join('')}</div>`;
             }
@@ -1728,7 +1740,33 @@
             handleAttendanceSubmit: async (courseId, date, attendanceId) => { const form = document.getElementById('attendance-form'); const formData = new FormData(form); const statuses = Object.fromEntries(formData.entries()); const data = { courseId, date, statuses }; try { const docRef = attendanceId ? doc(db, 'schools', state.school.id, 'attendance', attendanceId) : doc(collection(db, 'schools', state.school.id, 'attendance')); await setDoc(docRef, data, { merge: true }); showToast('Attendance saved!', 'success'); } catch (err) { showToast(`Error: ${err.message}`, 'error') } },
             openDayTypeModal: (dayTypeId = null) => { const dt = dayTypeId ? state.dayTypes.find(d => d.id === dayTypeId) : null; openModal(dt ? 'Edit Day Type' : 'Add Day Type', `<form id="day-type-form"><input type="hidden" name="id" value="${dt?.id||''}"><label class="block font-semibold">Name</label><input type="text" name="name" value="${dt?.name||''}" class="w-full p-2 border rounded-lg my-2" required><button type="submit" class="w-full bg-green-600 text-white font-bold py-2 px-4 rounded-lg">Save</button></form>`, 'md'); document.getElementById('day-type-form').addEventListener('submit', handleDayTypeSubmit); },
             handleDayTypeSubmit: async (e) => { e.preventDefault(); const id = e.target.elements.id.value; const name = e.target.elements.name.value; if (id) await updateDoc(doc(db, 'schools', state.school.id, 'dayTypes', id), { name }); else await addDoc(collection(db, 'schools', state.school.id, 'dayTypes'), { name }); closeModal(); },
-            deleteDayType: async (id) => { if (confirm('Are you sure?')) await deleteDoc(doc(db, 'schools', state.school.id, 'dayTypes', id)); },
+            deleteDayType: async (id) => { if (confirm('Are you sure? This will delete the day type and all associated time blocks.')) { try { const batch = writeBatch(db); batch.delete(doc(db, 'schools', state.school.id, 'dayTypes', id)); const q = query(collection(db, 'schools', state.school.id, 'timeBlocks'), where('dayTypeId', '==', id)); const snapshot = await getDocs(q); snapshot.forEach(doc => batch.delete(doc.ref)); await batch.commit(); showToast('Day Type deleted.', 'success'); } catch(err) { showToast(`Error: ${err.message}`, 'error'); } } },
+            duplicateDayType: async (dayTypeId) => {
+                if (!confirm('Are you sure you want to duplicate this day type and all of its time blocks?')) return;
+                const originalDayType = state.dayTypes.find(dt => dt.id === dayTypeId);
+                const originalTimeBlocks = state.timeBlocks.filter(tb => tb.dayTypeId === dayTypeId);
+                if (!originalDayType) {
+                    showToast('Original day type not found.', 'error');
+                    return;
+                }
+                try {
+                    const batch = writeBatch(db);
+                    const newDayTypeRef = doc(collection(db, 'schools', state.school.id, 'dayTypes'));
+                    batch.set(newDayTypeRef, { name: `${originalDayType.name} (Copy)` });
+
+                    originalTimeBlocks.forEach(block => {
+                        const { id, dayTypeId, ...blockData } = block;
+                        const newTimeBlockRef = doc(collection(db, 'schools', state.school.id, 'timeBlocks'));
+                        batch.set(newTimeBlockRef, { ...blockData, dayTypeId: newDayTypeRef.id });
+                    });
+                    
+                    await batch.commit();
+                    showToast('Day Type duplicated successfully!', 'success');
+                } catch(err) {
+                    showToast(`Error duplicating day type: ${err.message}`, 'error');
+                    console.error(err);
+                }
+            },
             openTimeBlockModal: (blockId = null, dayTypeId) => { const block = blockId ? state.timeBlocks.find(b => b.id === blockId) : null; const title = block ? 'Edit Time Block' : 'Add Time Block'; const body = `<form id="time-block-form"><input type="hidden" name="id" value="${block?.id||''}"><input type="hidden" name="dayTypeId" value="${dayTypeId}"><label class="block font-semibold">Block Name</label><input type="text" name="name" value="${block?.name||''}" class="w-full p-2 border rounded-lg my-2" required><label class="block font-semibold">Start Time</label><input type="time" name="startTime" value="${block?.startTime||''}" class="w-full p-2 border rounded-lg my-2" required><label class="block font-semibold">End Time</label><input type="time" name="endTime" value="${block?.endTime||''}" class="w-full p-2 border rounded-lg my-2" required><button type="submit" class="w-full bg-green-600 text-white font-bold py-2 px-4 rounded-lg">Save</button></form>`; openModal(title, body, 'md'); document.getElementById('time-block-form').addEventListener('submit', handleTimeBlockSubmit); },
             handleTimeBlockSubmit: async (e) => { e.preventDefault(); const formData = new FormData(e.target); const data = Object.fromEntries(formData.entries()); const id = data.id; delete data.id; if (id) await updateDoc(doc(db, 'schools', state.school.id, 'timeBlocks', id), data); else await addDoc(collection(db, 'schools', state.school.id, 'timeBlocks'), data); closeModal(); },
             deleteTimeBlock: async (id) => { if (confirm('Are you sure?')) await deleteDoc(doc(db, 'schools', state.school.id, 'timeBlocks', id)); },
@@ -1745,6 +1783,16 @@
             handleGradingPeriodSubmit: async (e) => { e.preventDefault(); try { const formData = new FormData(e.target); const data = Object.fromEntries(formData.entries()); const id = data.id; delete data.id; if(id) { await updateDoc(doc(db, 'schools', state.school.id, 'gradingPeriods', id), data); showToast('Grading period updated!', 'success'); } else { await addDoc(collection(db, 'schools', state.school.id, 'gradingPeriods'), data); showToast('Grading period added!', 'success'); } closeModal(); } catch (err) { showToast(`Error: ${err.message}`, 'error'); } },
             deleteGradingPeriod: async(id) => { if(confirm('Are you sure?')) await deleteDoc(doc(db, 'schools', state.school.id, 'gradingPeriods', id));},
             handleReportCardTemplateUpdate: async (e) => { e.preventDefault(); const formData = new FormData(e.target); const data = { includeGrades: formData.has('includeGrades'), includeAttendance: formData.has('includeAttendance') }; const id = formData.get('id'); try { const docRef = id ? doc(db, 'schools', state.school.id, 'reportCardTemplates', id) : doc(collection(db, 'schools', state.school.id, 'reportCardTemplates')); await setDoc(docRef, data); showToast('Template saved!', 'success'); } catch(err) { showToast(`Error: ${err.message}`, 'error'); } },
+            deleteReportCard: async (rcId) => {
+                if (confirm('Are you sure you want to delete this report card? This cannot be undone.')) {
+                    try {
+                        await deleteDoc(doc(db, 'schools', state.school.id, 'generatedReportCards', rcId));
+                        showToast('Report card deleted.', 'success');
+                    } catch (err) {
+                        showToast(`Error deleting report card: ${err.message}`, 'error');
+                    }
+                }
+            },
             generateReportCardsForPeriod: async(periodId) => { const btn = document.getElementById(`generate-rc-btn-${periodId}`); btn.disabled = true; btn.innerHTML = 'Generating...'; const period = state.gradingPeriods.find(p => p.id === periodId); const template = state.reportCardTemplates[0] || { includeGrades: true, includeAttendance: true }; try { const batch = writeBatch(db); state.students.forEach(student => { const reportCardId = `${student.id}_${periodId}`; const reportCardRef = doc(db, 'schools', state.school.id, 'generatedReportCards', reportCardId); batch.set(reportCardRef, { studentId: student.id, periodId: periodId, generatedAt: serverTimestamp(), studentName: student.displayName, periodName: period.name, template: template }); }); await batch.commit(); showToast(`Report cards generated for ${period.name}!`, 'success'); } catch (err) { showToast(`Error: ${err.message}`, 'error'); } finally { btn.disabled = false; btn.innerHTML = 'Generate'; } },
             openReportCardModal: (rcId) => {
                 const rc = state.generatedReportCards.find(r => r.id === rcId);
