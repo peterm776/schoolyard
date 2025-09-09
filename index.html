@@ -611,9 +611,8 @@
             'report-cards': { render: renderReportCards },
         };
         
-        // --- All render functions below this point are unchanged from the previous version,
-        // --- except for renderScheduleEditor and the new renderPrintableSchedule.
-        // --- They are included for completeness as requested.
+        // --- All render functions below this point are included for completeness.
+        // --- Key changes are in renderGradebook, openAssignmentModal, and openReportCardModal.
         
         function renderParentDashboard() {
              setPageTitle('Dashboard');
@@ -819,7 +818,7 @@
             if(!content) return;
             let createButton = canEdit(course) ? `<button onclick="openAssignmentModal(null, '${course.id}')" class="bg-primary-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-primary-600">Create Assignment</button>` : '';
             const assignments = state.assignments.filter(a => a.courseId === course.id).sort((a,b) => new Date(b.dueDate) - new Date(a.dueDate));
-            let assignmentsHtml = assignments.length > 0 ? `<ul class="space-y-3">${assignments.map(a => `<li class="p-4 bg-slate-50 rounded-md flex justify-between items-center"><div><p class="font-semibold text-lg text-slate-800">${a.title}</p><p class="text-sm text-slate-500">Due: ${a.dueDate}</p></div>${canEdit(course) ? `<div class="flex space-x-2"><button onclick="openAssignmentModal('${a.id}', '${course.id}')" class="text-yellow-600 hover:text-yellow-800 font-semibold">Edit</button><button onclick="deleteAssignment('${a.id}')" class="text-red-600 hover:text-red-800 font-semibold">Delete</button></div>` : ''}</li>`).join('')}</ul>` : `<p class="text-center text-slate-500 py-8">No assignments have been created for this course yet.</p>`;
+            let assignmentsHtml = assignments.length > 0 ? `<ul class="space-y-3">${assignments.map(a => `<li class="p-4 bg-slate-50 rounded-md flex justify-between items-center"><div><p class="font-semibold text-lg text-slate-800">${a.title}</p><p class="text-sm text-slate-500">Due: ${a.dueDate} &bull; ${a.maxPoints || 0} pts</p></div>${canEdit(course) ? `<div class="flex space-x-2"><button onclick="openAssignmentModal('${a.id}', '${course.id}')" class="text-yellow-600 hover:text-yellow-800 font-semibold">Edit</button><button onclick="deleteAssignment('${a.id}')" class="text-red-600 hover:text-red-800 font-semibold">Delete</button></div>` : ''}</li>`).join('')}</ul>` : `<p class="text-center text-slate-500 py-8">No assignments have been created for this course yet.</p>`;
             content.innerHTML = `<div class="flex justify-end mb-4">${createButton}</div>${assignmentsHtml}`;
         }
 
@@ -928,10 +927,8 @@
                                 const grade = state.grades.find(g => g.assignmentId === a.id && g.studentId === studentId);
                                 
                                 let gradeDisplay = '';
-                                if (grade?.score) {
-                                    gradeDisplay = `<span class="font-semibold px-3">${grade.score}</span>`;
-                                } else if (state.user.role === 'student') {
-                                    gradeDisplay = `<button onclick="updateGrade('${studentId}', '${a.id}', '${course.id}', 'Submitted', '')" class="bg-green-500 text-white text-xs font-bold py-1 px-3 rounded-full hover:bg-green-600">Submit</button>`;
+                                if (grade?.score != null) {
+                                    gradeDisplay = `<span class="font-semibold px-3">${grade.score} / ${a.maxPoints || '?'}</span>`;
                                 } else {
                                     gradeDisplay = `<span class="font-semibold px-3 text-slate-400">Not Graded</span>`;
                                 }
@@ -959,7 +956,7 @@
                 const students = state.students.filter(s => enrolledStudentIds.includes(s.id));
                 const assignments = state.assignments.filter(a => a.courseId === courseId);
                 const grades = state.grades.filter(g => g.courseId === courseId);
-                html += `<div class="overflow-x-auto"><table class="min-w-full text-sm gradebook-table"><thead class="bg-slate-100"><tr><th class="p-2 border font-semibold text-left">Student Name</th>${assignments.map(a => `<th class="p-2 border font-semibold">${a.title}</th>`).join('')}</tr></thead><tbody>${students.map(student => `<tr class="border-b"><td class="p-2 border font-medium text-left">${student.displayName}</td>${assignments.map(assignment => { const grade = grades.find(g => g.studentId === student.id && g.assignmentId === assignment.id); return `<td class="p-0 border"><input type="text" value="${grade?.score || ''}" onchange="updateGrade('${student.id}', '${assignment.id}', '${courseId}', this.value, '${grade?.id || ''}')" class="w-full h-full text-center p-2 outline-none focus:bg-primary-100" /></td>` }).join('')}</tr>`).join('')}</tbody></table></div>`;
+                html += `<div class="overflow-x-auto"><table class="min-w-full text-sm gradebook-table"><thead class="bg-slate-100"><tr><th class="p-2 border font-semibold text-left">Student Name</th>${assignments.map(a => `<th class="p-2 border font-semibold">${a.title}<br><span class="text-xs font-normal">(${a.maxPoints || 0} pts)</span></th>`).join('')}</tr></thead><tbody>${students.map(student => `<tr class="border-b"><td class="p-2 border font-medium text-left">${student.displayName}</td>${assignments.map(assignment => { const grade = grades.find(g => g.studentId === student.id && g.assignmentId === assignment.id); return `<td class="p-0 border"><input type="number" value="${grade?.score || ''}" onchange="updateGrade('${student.id}', '${assignment.id}', '${courseId}', this.value, '${grade?.id || ''}')" class="w-full h-full text-center p-2 outline-none focus:bg-primary-100" /></td>` }).join('')}</tr>`).join('')}</tbody></table></div>`;
             }
             content.innerHTML = html;
             const selectEl = document.getElementById('gradebook-course-select');
@@ -1030,7 +1027,6 @@
             }).join('')}</tbody></table></div>`;
         }
 
-        // *** MODIFIED FUNCTION ***
         function renderScheduleEditor(idParts) {
             const [studentId] = idParts;
             const student = state.students.find(s => s.id === studentId);
@@ -1390,9 +1386,7 @@
             content.innerHTML = html;
         }
         
-        // --- ALL "window" functions below this point are unchanged,
-        // --- except for the new PDF/Schedule functions.
-        // --- They are included for completeness.
+        // --- ALL "window" functions below are included for completeness. ---
 
         Object.assign(window, {
             closeModal: () => document.getElementById('modal-template').classList.add('hidden'),
@@ -1583,10 +1577,53 @@
             },
             handleGeneralSettingsSubmit: async (e) => { e.preventDefault(); const formData = new FormData(e.target); const data = Object.fromEntries(formData.entries()); try { await updateDoc(doc(db, 'schools', state.school.id), data); showToast('Settings saved!', 'success'); } catch (err) { showToast(`Error: ${err.message}`, 'error'); } },
             handleAnnouncementSubmit: async (e, courseId) => { e.preventDefault(); const content = e.target.elements.content.value; if (!content.trim()) return; try { await addDoc(collection(db, 'schools', state.school.id, 'announcements'), { courseId, authorId: state.user.id, content, createdAt: serverTimestamp() }); e.target.reset(); } catch (err) { showToast(`Error: ${err.message}`, 'error') } },
-            openAssignmentModal: (assignmentId, courseId) => { const assignment = assignmentId ? state.assignments.find(a => a.id === assignmentId) : null; const title = assignment ? 'Edit Assignment' : 'New Assignment'; const body = `<form id="assignment-form"><input type="hidden" name="id" value="${assignment?.id||''}"><input type="hidden" name="courseId" value="${courseId}"><label class="block font-semibold">Title</label><input type="text" name="title" value="${assignment?.title||''}" class="w-full p-2 border rounded-lg my-2" required><label class="block font-semibold">Due Date</label><input type="date" name="dueDate" value="${assignment?.dueDate||''}" class="w-full p-2 border rounded-lg my-2" required><button type="submit" class="w-full bg-green-600 text-white font-bold py-2 px-4 rounded-lg">Save</button></form>`; openModal(title, body); document.getElementById('assignment-form').addEventListener('submit', handleAssignmentFormSubmit); },
-            handleAssignmentFormSubmit: async (e) => { e.preventDefault(); const formData = new FormData(e.target); const data = Object.fromEntries(formData.entries()); const assignmentId = data.id; try { if (assignmentId) { await updateDoc(doc(db, 'schools', state.school.id, 'assignments', assignmentId), data); showToast('Assignment updated.', 'success'); } else { delete data.id; await addDoc(collection(db, 'schools', state.school.id, 'assignments'), data); showToast('Assignment created.', 'success'); } closeModal(); } catch (err) { showToast(`Error: ${err.message}`, 'error') } },
+            openAssignmentModal: (assignmentId, courseId) => { 
+                const assignment = assignmentId ? state.assignments.find(a => a.id === assignmentId) : null; 
+                const title = assignment ? 'Edit Assignment' : 'New Assignment'; 
+                const body = `<form id="assignment-form">
+                    <input type="hidden" name="id" value="${assignment?.id||''}">
+                    <input type="hidden" name="courseId" value="${courseId}">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div class="md:col-span-2">
+                            <label class="block font-semibold">Title</label>
+                            <input type="text" name="title" value="${assignment?.title||''}" class="w-full p-2 border rounded-lg mt-1" required>
+                        </div>
+                        <div>
+                            <label class="block font-semibold">Due Date</label>
+                            <input type="date" name="dueDate" value="${assignment?.dueDate||''}" class="w-full p-2 border rounded-lg mt-1" required>
+                        </div>
+                        <div>
+                            <label class="block font-semibold">Maximum Points</label>
+                            <input type="number" name="maxPoints" value="${assignment?.maxPoints||'100'}" class="w-full p-2 border rounded-lg mt-1" required>
+                        </div>
+                    </div>
+                    <button type="submit" class="w-full bg-green-600 text-white font-bold py-2 px-4 rounded-lg mt-6">Save Assignment</button>
+                </form>`; 
+                openModal(title, body); 
+                document.getElementById('assignment-form').addEventListener('submit', handleAssignmentFormSubmit); 
+            },
+            handleAssignmentFormSubmit: async (e) => { 
+                e.preventDefault(); 
+                const formData = new FormData(e.target); 
+                const data = Object.fromEntries(formData.entries()); 
+                const assignmentId = data.id; 
+                data.maxPoints = parseInt(data.maxPoints, 10);
+                try { 
+                    if (assignmentId) { 
+                        await updateDoc(doc(db, 'schools', state.school.id, 'assignments', assignmentId), data); 
+                        showToast('Assignment updated.', 'success'); 
+                    } else { 
+                        delete data.id; 
+                        await addDoc(collection(db, 'schools', state.school.id, 'assignments'), data); 
+                        showToast('Assignment created.', 'success'); 
+                    } 
+                    closeModal(); 
+                } catch (err) { 
+                    showToast(`Error: ${err.message}`, 'error') 
+                } 
+            },
             deleteAssignment: async (assignmentId) => { if (confirm('Delete this assignment?')) { await deleteDoc(doc(db, 'schools', state.school.id, 'assignments', assignmentId)); showToast('Assignment deleted.', 'success'); } },
-            updateGrade: async (studentId, assignmentId, courseId, score, gradeId) => { const newGradeId = gradeId || `${studentId}_${assignmentId}`; const data = { studentId, assignmentId, courseId, score }; try { await setDoc(doc(db, 'schools', state.school.id, 'grades', newGradeId), data, { merge: true }); showToast(`Grade saved.`, 'success'); } catch (err) { showToast(`Error: ${err.message}`, 'error'); } },
+            updateGrade: async (studentId, assignmentId, courseId, score, gradeId) => { const newGradeId = gradeId || `${studentId}_${assignmentId}`; const data = { studentId, assignmentId, courseId, score: score === '' ? null : parseFloat(score) }; try { await setDoc(doc(db, 'schools', state.school.id, 'grades', newGradeId), data, { merge: true }); showToast(`Grade saved.`, 'success'); } catch (err) { showToast(`Error: ${err.message}`, 'error'); } },
             handleAttendanceSubmit: async (courseId, date, attendanceId) => { const form = document.getElementById('attendance-form'); const formData = new FormData(form); const statuses = Object.fromEntries(formData.entries()); const data = { courseId, date, statuses }; try { const docRef = attendanceId ? doc(db, 'schools', state.school.id, 'attendance', attendanceId) : doc(collection(db, 'schools', state.school.id, 'attendance')); await setDoc(docRef, data, { merge: true }); showToast('Attendance saved!', 'success'); } catch (err) { showToast(`Error: ${err.message}`, 'error') } },
             openDayTypeModal: (dayTypeId = null) => { const dt = dayTypeId ? state.dayTypes.find(d => d.id === dayTypeId) : null; openModal(dt ? 'Edit Day Type' : 'Add Day Type', `<form id="day-type-form"><input type="hidden" name="id" value="${dt?.id||''}"><label class="block font-semibold">Name</label><input type="text" name="name" value="${dt?.name||''}" class="w-full p-2 border rounded-lg my-2" required><button type="submit" class="w-full bg-green-600 text-white font-bold py-2 px-4 rounded-lg">Save</button></form>`, 'md'); document.getElementById('day-type-form').addEventListener('submit', handleDayTypeSubmit); },
             handleDayTypeSubmit: async (e) => { e.preventDefault(); const id = e.target.elements.id.value; const name = e.target.elements.name.value; if (id) await updateDoc(doc(db, 'schools', state.school.id, 'dayTypes', id), { name }); else await addDoc(collection(db, 'schools', state.school.id, 'dayTypes'), { name }); closeModal(); },
@@ -1657,9 +1694,13 @@
                         const teacher = state.teachers.find(t => t.id === course.teacherId);
                         const assignmentsInPeriod = state.assignments.filter(a => a.courseId === course.id && a.dueDate >= period.startDate && a.dueDate <= period.endDate);
                         const gradesInPeriod = state.grades.filter(g => g.studentId === rc.studentId && assignmentsInPeriod.some(a => a.id === g.assignmentId));
-                        const numericGrades = gradesInPeriod.map(g => parseFloat(g.score)).filter(s => !isNaN(s));
-                        const avg = numericGrades.length > 0 ? (numericGrades.reduce((sum, score) => sum + score, 0) / numericGrades.length).toFixed(2) : 'N/A';
-                        return `<tr><td class="border-b p-2">${course.name}</td><td class="border-b p-2">${teacher?.displayName || ''}</td><td class="border-b p-2 font-bold">${avg}</td></tr>`;
+                        
+                        const totalPointsEarned = gradesInPeriod.reduce((sum, g) => sum + (parseFloat(g.score) || 0), 0);
+                        const totalPointsPossible = assignmentsInPeriod.reduce((sum, a) => sum + (a.maxPoints || 0), 0);
+                        
+                        const finalGrade = totalPointsPossible > 0 ? `${((totalPointsEarned / totalPointsPossible) * 100).toFixed(2)}%` : 'N/A';
+                        
+                        return `<tr><td class="border-b p-2">${course.name}</td><td class="border-b p-2">${teacher?.displayName || ''}</td><td class="border-b p-2 font-bold">${finalGrade}</td></tr>`;
                     }).join('');
                     gradesHtml = `<h3 class="text-xl mb-2 mt-4">Course Grades</h3><table class="w-full text-left border-collapse"><thead><tr><th class="border-b p-2">Course</th><th class="border-b p-2">Teacher</th><th class="border-b p-2">Grade</th></tr></thead><tbody>${gradesBody}</tbody></table>`;
                 }
@@ -1819,7 +1860,6 @@
                 `;
                 openModal(title, body, '5xl');
             },
-            // *** NEW/MODIFIED FUNCTIONS FOR PRINTABLE SCHEDULE ***
             openPrintableScheduleModal: (studentId) => {
                 const student = state.students.find(s => s.id === studentId);
                 if (!student) return showToast('Student not found.', 'error');
@@ -1831,7 +1871,7 @@
                     <button onclick="generatePdfFromHtml('printable-schedule-content', 'Student Schedule for ${student.displayName}')" class="mt-4 w-full bg-red-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-red-600">Download PDF</button>
                 `;
                 openModal(title, body, '6xl');
-                renderPrintableSchedule(studentId); // Call renderer after modal is open
+                renderPrintableSchedule(studentId);
             },
             renderPrintableSchedule: (studentId) => {
                 const student = state.students.find(s => s.id === studentId);
@@ -1839,7 +1879,6 @@
                 const contentEl = document.getElementById('printable-schedule-content');
                 if (!contentEl || !student) return;
 
-                // Create a sorted master list of unique time slots
                 const allTimeSlots = state.timeBlocks.map(tb => `${tb.startTime} - ${tb.endTime}`);
                 const uniqueTimeSlots = [...new Set(allTimeSlots)].sort();
 
@@ -1853,7 +1892,6 @@
 
                 uniqueTimeSlots.forEach(slot => {
                     const [start, end] = slot.split(' - ');
-                    // Find a representative block for the row label (name)
                     const representativeBlock = state.timeBlocks.find(tb => tb.startTime === start && tb.endTime === end);
                     html += `<tr><td><strong>${representativeBlock?.name || ''}</strong><br>${slot}</td>`;
                     
