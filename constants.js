@@ -1,0 +1,64 @@
+export const palettes = {
+    sky: { 100: "224 242 254", 400: "#38bdf8", 500: "#0ea5e9", 600: "#0284c7", 700: "#0369a1" },
+    indigo: { 100: "224 231 255", 400: "#818cf8", 500: "#6366f1", 600: "#4f46e5", 700: "#4338ca" },
+    emerald: { 100: "209 250 229", 400: "#34d399", 500: "#10b981", 600: "#059669", 700: "#047857" },
+    rose: { 100: "255 228 230", 400: "#fb7185", 500: "#f43f5e", 600: "#e11d48", 700: "#be123c" }
+};
+
+export const allNavLinks = {
+    myday: { href: 'myday', text: 'My Day', icon: `<svg class="h-6 w-6 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a2 2 0 002 2h10a2 2 0 002-2V10M9 20h6"/></svg>`},
+    parentDashboard: { href: 'dashboard', text: 'Dashboard', icon: `<svg class="h-6 w-6 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" /></svg>`},
+    launchpad: { href: 'launchpad', text: 'Launchpad', icon: `<svg class="h-6 w-6 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" /></svg>`},
+    courses: { href: 'courses', text: 'Courses', icon: `<svg class="h-6 w-6 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M12 14l9-5-9-5-9 5 9 5z" /><path d="M12 14l6.16-3.422a12.083 12.083 0 01.665 6.479A11.952 11.952 0 0112 20.055a11.952 11.952 0 01-6.824-2.998 12.078 12.078 0 01.665-6.479L12 14z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 14l9-5-9-5-9 5 9 5zm0 0v6" /></svg>`},
+    attendance: { href: 'attendance', text: 'Attendance', icon: `<svg class="h-6 w-6 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" /></svg>`},
+    gradebook: { href: 'gradebook', text: 'Gradebook', icon: `<svg class="h-6 w-6 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7v8a2 2 0 002 2h4M8 7a2 2 0 012-2h4a2 2 0 012 2v8a2 2 0 01-2 2h-4a2 2 0 01-2-2z"/></svg>`},
+    reportCards: { href: 'report-cards', text: 'Report Cards', icon: `<svg class="h-6 w-6 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>`},
+    tuition: { href: 'tuition', text: 'Tuition & Billing', icon: `<svg class="h-6 w-6 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" /></svg>`},
+    calendar: { href: 'calendar', text: 'Calendar', icon: `<svg class="h-6 w-6 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>`},
+    reports: { href: 'reports', text: 'Reports', icon: `<svg class="h-6 w-6 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V7a2 2 0 012-2h2l2-2h4l2 2h2a2 2 0 012 2v10a2 2 0 01-2 2z" /></svg>`},
+    users: { href: 'users', text: 'Users', icon: `<svg class="h-6 w-6 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M15 21a6 6 0 00-9-5.197m0 0A5.995 5.995 0 0012 12a5.995 5.995 0 00-3-5.197m-2 5.197a4 4 0 110-5.292" /></svg>`},
+    profile: { href: 'profile', text: 'Profile', icon: `<svg class="h-6 w-6 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>`},
+    settings: { href: 'settings', text: 'Settings', icon: `<svg class="h-6 w-6 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.096 2.572-1.065z" /><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>`}
+};
+
+export const rolesConfig = {
+    admin: ['myday', 'launchpad', 'users', 'courses', 'attendance', 'gradebook', 'reportCards', 'calendar', 'reports', 'tuition', 'profile', 'settings'],
+    teacher: ['myday', 'launchpad', 'courses', 'attendance', 'gradebook', 'reportCards', 'calendar', 'profile'],
+    student: ['myday', 'launchpad', 'courses', 'gradebook', 'reportCards', 'calendar', 'tuition', 'profile'],
+    parent: ['parentDashboard', 'launchpad', 'gradebook', 'reportCards', 'calendar', 'tuition', 'reports', 'profile'],
+};
+
+export const templates = {
+    authView: `
+        <div class="h-screen w-screen flex flex-col items-center justify-center bg-slate-100 p-4" style="background-image: url('https://images.unsplash.com/photo-1481627834876-b7833e8f5570?q=80&w=2128&auto=format&fit=crop'); background-size: cover; background-position: center;">
+            <div id="view-container" class="bg-white/80 backdrop-blur-sm p-8 rounded-2xl shadow-2xl text-center max-w-sm w-full">
+                <div class="loader-container h-32 flex items-center justify-center"><div class="loader"></div></div>
+            </div>
+        </div>`,
+    appView: `
+        <div class="flex h-screen">
+            <aside id="sidebar" class="sidebar fixed top-0 left-0 h-full bg-slate-900 text-white w-64 p-6 z-20 md:translate-x-0 overflow-y-auto">
+                <div id="sidebar-header" class="flex items-center justify-center mb-10 h-10"></div>
+                <nav id="nav"></nav>
+            </aside>
+            <main id="main-content" class="main-content flex-1 md:ml-64 overflow-y-auto">
+                <div class="p-6 md:p-8">
+                    <header class="flex justify-between items-center mb-8">
+                        <button id="sidebar-toggle" class="md:hidden p-2 rounded-md bg-slate-200 text-slate-800">
+                            <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16m-7 6h7" /></svg>
+                        </button>
+                        <h2 id="page-title" class="text-3xl font-bold text-slate-800"></h2>
+                        <div class="flex items-center">
+                            <div id="user-info" class="text-right hidden sm:block"></div>
+                            <button id="logout-button" title="Logout" class="ml-4 bg-red-500 text-white p-2 rounded-full hover:bg-red-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500">
+                                <svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M3 3a1 1 0 00-1 1v12a1 1 0 102 0V4a1 1 0 00-1-1zm10.293 9.293a1 1 0 001.414 1.414l3-3a1 1 0 000-1.414l-3-3a1 1 0 10-1.414 1.414L14.586 9H7a1 1 0 100 2h7.586l-1.293 1.293z" clip-rule="evenodd" /></svg>
+                            </button>
+                        </div>
+                    </header>
+                    <div id="content" class="bg-white rounded-xl shadow-md p-6 min-h-[calc(100vh-150px)]">
+                        <div class="loader-container h-64 flex items-center justify-center"><div class="loader"></div></div>
+                    </div>
+                </div>
+            </main>
+        </div>`
+};
