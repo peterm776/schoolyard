@@ -693,9 +693,16 @@ export async function handleReportCardTemplateSave(app) {
 
 export async function generateReportCardsForPeriod(app, periodId) {
     const btn = document.getElementById(`generate-rc-btn-${periodId}`);
-    if (btn) { btn.disabled = true; btn.textContent = '...'; }
+    if (btn) { btn.disabled = true; btn.innerHTML = '...'; }
+
     const { state, db } = app;
     const period = state.gradingPeriods.find(p => p.id === periodId);
+    if (!period) {
+        showToast('Grading period not found.', 'error');
+        if (btn) { btn.disabled = false; btn.innerHTML = 'Generate'; }
+        return;
+    }
+
     const template = state.reportCardTemplates[0] || {};
     const layout = template.layout || [
         { type: 'schoolHeader' }, { type: 'studentInfo' }, { type: 'gradesTable' }, { type: 'attendanceSummary' }
@@ -705,19 +712,43 @@ export async function generateReportCardsForPeriod(app, periodId) {
     for (const student of state.students) {
         const studentData = {};
         
-        for (const component of layout) {
-            if (component.type === 'gradesTable') {
-                const enrolledCourses = state.courses.filter(c => app.getEnrolledStudentIds(c.id).includes(student.id));
-                const coursesData = enrolledCourses.map(course => {
-                    const assignments = state.assignments.filter(a => a.courseId === course.id && new Date(a.dueDate) >= new Date(period.startDate) && new Date(a.dueDate) <= new Date(period.endDate));
-                    const grades = assignments.map(a => {
-                        const grade = state.grades.find(g => g.studentId === student.id && g.assignmentId === a.id);
-                        return { title: a.title, score: grade?.score, maxPoints: a.maxPoints };
-                    });
-                    return { name: course.name, grades };
-                });
-                studentData.courses = coursesData;
+        // This logic now runs for all students, ensuring course data is always present.
+        const enrolledCourses = state.courses.filter(c => app.getEnrolledStudentIds(c.id).includes(student.id));
+        const coursesData = enrolledCourses.map(course => {
+            const assignments = state.assignments.filter(a => a.courseId === course.id && new Date(a.dueDate) >= new Date(period.startDate) && new Date(a.dueDate) <= new Date(period.endDate));
+            
+            let totalScore = 0;
+            let totalMaxPoints = 0;
+            
+            const grades = assignments.map(a => {
+                const grade = state.grades.find(g => g.studentId === student.id && g.assignmentId === a.id);
+                const score = grade?.score;
+                const maxPoints = a.maxPoints ? Number(a.maxPoints) : 0;
+                
+                if (score != null && maxPoints > 0) {
+                    totalScore += Number(score);
+                    totalMaxPoints += maxPoints;
+                }
+                
+                return { title: a.title, score: score, maxPoints: maxPoints };
+            });
+            
+            const finalGradePercent = totalMaxPoints > 0 ? (totalScore / totalMaxPoints) * 100 : null;
+            let finalLetterGrade = 'N/A';
+            if (finalGradePercent !== null) {
+                if (finalGradePercent >= 90) finalLetterGrade = 'A';
+                else if (finalGradePercent >= 80) finalLetterGrade = 'B';
+                else if (finalGradePercent >= 70) finalLetterGrade = 'C';
+                else if (finalGradePercent >= 60) finalLetterGrade = 'D';
+                else finalLetterGrade = 'F';
             }
+
+            return { name: course.name, grades, finalGradePercent, finalLetterGrade };
+        });
+        studentData.courses = coursesData;
+
+        // This component-based data aggregation is flexible.
+        for (const component of layout) {
             if (component.type === 'attendanceSummary') {
                 let absentCount = 0; let tardyCount = 0;
                 state.attendance.forEach(record => {
@@ -745,9 +776,10 @@ export async function generateReportCardsForPeriod(app, periodId) {
     } catch (err) {
         showToast(`Error generating report cards: ${err.message}`, 'error');
     } finally {
-        if (btn) { btn.disabled = false; btn.textContent = 'Generate'; }
+        if (btn) { btn.disabled = false; btn.innerHTML = 'Generate'; }
     }
 }
+
 
 export async function deleteReportCard(app, rcId) {
     if(confirm('Delete this report card?')) {
@@ -799,7 +831,7 @@ export function generatePdfFromHtml(app, elementId, pdfTitle) {
         return;
     }
     showToast('Generating PDF...', 'success');
-    html2canvas(source).then(canvas => {
+    html2canvas(source, { scale: 2 }).then(canvas => {
         const imgData = canvas.toDataURL('image/png');
         const pdf = new jsPDF({
             orientation: 'p',

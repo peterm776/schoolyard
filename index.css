@@ -47,16 +47,24 @@ body { font-family: 'Inter', sans-serif; background-color: #f8fafc; }
     background-color: rgb(var(--primary-100));
 }
 .printable-report { border: 1px solid #ddd; padding: 24px; font-family: 'Times New Roman', serif; color: black; background-color: white; }
-.printable-report h1, .printable-report h2, .printable-report h3 { color: black; }
+.printable-report h1, .printable-report h2, .printable-report h3, .printable-report h4 { color: black; }
 .printable-schedule-table { border-collapse: collapse; width: 100%; font-size: 12px;}
 .printable-schedule-table th, .printable-schedule-table td { border: 1px solid #ccc; padding: 8px; text-align: center; vertical-align: top;}
 .printable-schedule-table th { background-color: #f2f2f2; }
 .page-break { page-break-after: always; }
+.printable-report .page-break { page-break-after: always; }
+.printable-report .mb-6 { margin-bottom: 1.5rem; }
+.printable-report .mb-8 { margin-bottom: 2rem; }
+.printable-report .mt-6 { margin-top: 1.5rem; }
+.printable-report .mt-24 { margin-top: 6rem; }
+.printable-report .pt-4 { padding-top: 1rem; }
+.printable-report .border-t { border-top: 1px solid #ccc; }
+
 
 /* Report Card Editor Styles */
 .report-card-editor {
     display: grid;
-    grid-template-columns: 280px 1fr;
+    grid-template-columns: 320px 1fr;
     gap: 1.5rem;
     height: calc(100vh - 220px);
 }
@@ -74,10 +82,19 @@ body { font-family: 'Inter', sans-serif; background-color: #f8fafc; }
     padding: 0.75rem 1rem;
     border-radius: 0.375rem;
     margin-bottom: 0.75rem;
-    text-align: center;
     font-weight: 600;
     color: #334155;
     transition: box-shadow 0.2s, transform 0.2s;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    text-align: left;
+}
+.palette-item svg {
+    flex-shrink: 0;
+    width: 1.75rem;
+    height: 1.75rem;
+    color: var(--primary-600);
 }
 .palette-item:hover {
     box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
@@ -91,7 +108,7 @@ body { font-family: 'Inter', sans-serif; background-color: #f8fafc; }
     background-color: white;
     border: 2px dashed #cbd5e1;
     border-radius: 0.5rem;
-    padding: 2rem;
+    padding: 1rem;
     overflow-y: auto;
     transition: all 0.2s;
 }
@@ -103,12 +120,36 @@ body { font-family: 'Inter', sans-serif; background-color: #f8fafc; }
     position: relative;
     border: 1px solid #e2e8f0;
     background-color: #f8fafc;
-    padding: 1.5rem;
+    padding: 1rem;
     margin-bottom: 1rem;
     border-radius: 0.375rem;
     cursor: grab;
     user-select: none;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
 }
+.canvas-item > .flex {
+    flex-grow: 1;
+}
+.canvas-item .item-icon svg {
+    width: 1.75rem;
+    height: 1.75rem;
+    color: var(--primary-600);
+}
+.canvas-item .item-content {
+    flex-grow: 1;
+}
+.canvas-item-preview {
+    font-size: 0.8rem;
+    color: #64748b;
+    margin-top: 0.25rem;
+    padding: 0.5rem;
+    background-color: #fff;
+    border-radius: 0.25rem;
+    border: 1px solid #e2e8f0;
+}
+
 .canvas-item:active {
     cursor: grabbing;
 }

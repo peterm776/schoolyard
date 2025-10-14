@@ -1158,12 +1158,16 @@ function renderReportCardTemplateEditor(app) {
     if(!content) return;
 
     const components = [
-        { type: 'schoolHeader', name: 'School Header' },
-        { type: 'studentInfo', name: 'Student Info' },
-        { type: 'gradesTable', name: 'Grades Table' },
-        { type: 'attendanceSummary', name: 'Attendance Summary' },
-        { type: 'teacherComments', name: 'Teacher Comments' },
-        { type: 'signatureLine', name: 'Signature Line' },
+        { type: 'schoolHeader', name: 'School Header', icon: `<svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 14v3m4-3v3m4-3v3M3 21h18M3 10h18M3 7l9-4 9 4M4 10h16v11H4V10z"/></svg>`, preview: '<h1>School Name</h1><h2>Report Card</h2>' },
+        { type: 'studentInfo', name: 'Student Info', icon: `<svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>`, preview: '<p><strong>Student:</strong> John Doe</p><p><strong>Period:</strong> Trimester 1</p>' },
+        { type: 'gradesTable', name: 'Grades Table', icon: `<svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h18M3 15h18M3 20h18M3 5h18"/></svg>`, preview: 'Shows detailed assignments and a final grade for each course.' },
+        { type: 'finalGrade', name: 'Final Grade Summary', icon: `<svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>`, preview: 'A summary table of final grades for all courses.' },
+        { type: 'attendanceSummary', name: 'Attendance', icon: `<svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/></svg>`, preview: '<p><strong>Absences:</strong> 2</p><p><strong>Tardies:</strong> 1</p>' },
+        { type: 'gradingScale', name: 'Grading Scale', icon: `<svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 6l3 1m0 0l-3 9a5.002 5.002 0 006.001 0M6 7l3 9M6 7l6-2m6 2l3-1m-3 1l-3 9a5.002 5.002 0 006.001 0M18 7l3 9m-3-9l-6-2m0-2v2m0 16V5m0 16H9m3 0h3"/></svg>`, preview: '<p>A: 90-100, B: 80-89, ...</p>' },
+        { type: 'teacherComments', name: 'Teacher Comments', icon: `<svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg>`, preview: 'A text box for teacher comments.' },
+        { type: 'principalComment', name: 'Principal\'s Comment', icon: `<svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"/></svg>`, preview: 'A text box for the principal\'s comments.' },
+        { type: 'signatureLine', name: 'Signature Line', icon: `<svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>`, preview: '<p>___________________</p><p>Signature</p>' },
+        { type: 'pageBreak', name: 'Page Break', icon: `<svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15V5m0 10l3.5-3.5M5 15l-3.5-3.5M19 15V5m0 10l3.5-3.5M19 15l-3.5-3.5M4 9h16"/></svg>`, preview: 'Forces a new page when printing.' },
     ];
 
     content.innerHTML = `
@@ -1175,14 +1179,28 @@ function renderReportCardTemplateEditor(app) {
             <div id="rc-palette" class="palette">
                 <h4 class="font-bold text-lg mb-2 text-slate-600">Components</h4>
                 <p class="text-sm text-slate-500 mb-4">Drag components onto the canvas.</p>
-                ${components.map(c => `<div class="palette-item" draggable="true" data-type="${c.type}">${c.name}</div>`).join('')}
+                ${components.map(c => `<div class="palette-item" draggable="true" data-type="${c.type}">${c.icon}<span class="font-semibold">${c.name}</span></div>`).join('')}
             </div>
-            <div id="rc-canvas" class="canvas">
-                <!-- Dropped items will go here -->
-            </div>
+            <div id="rc-canvas" class="canvas"></div>
         </div>
     `;
     
+    const createCanvasItem = (component) => {
+        const el = document.createElement('div');
+        el.className = 'canvas-item';
+        el.dataset.type = component.type;
+        el.draggable = true;
+        el.innerHTML = `<div class="flex items-start gap-3 w-full">
+                <div class="item-icon">${component.icon}</div>
+                <div class="item-content">
+                    <span class="font-bold">${component.name}</span>
+                    <div class="canvas-item-preview">${component.preview}</div>
+                </div>
+            </div>
+            <button class="remove-btn">&times;</button>`;
+        return el;
+    };
+
     // Populate canvas with existing template
     const template = state.reportCardTemplates[0] || {};
     const layout = template.layout || [{ type: 'schoolHeader' }, { type: 'studentInfo' }, { type: 'gradesTable' }, { type: 'attendanceSummary' }];
@@ -1190,12 +1208,7 @@ function renderReportCardTemplateEditor(app) {
     layout.forEach(item => {
         const component = components.find(c => c.type === item.type);
         if(component) {
-            const el = document.createElement('div');
-            el.className = 'canvas-item';
-            el.dataset.type = component.type;
-            el.draggable = true;
-            el.innerHTML = `<span class="font-bold">${component.name}</span><button class="remove-btn">&times;</button>`;
-            canvas.appendChild(el);
+            canvas.appendChild(createCanvasItem(component));
         }
     });
 
@@ -1204,13 +1217,13 @@ function renderReportCardTemplateEditor(app) {
     let draggedItem = null;
 
     const handleDragStart = (e) => {
-        draggedItem = e.target;
-        setTimeout(() => e.target.style.opacity = '0.5', 0);
+        draggedItem = e.target.closest('.palette-item, .canvas-item');
+        setTimeout(() => { if (draggedItem) draggedItem.style.opacity = '0.5' }, 0);
     };
 
     const handleDragEnd = (e) => {
         setTimeout(() => {
-            e.target.style.opacity = '1';
+            if (draggedItem) draggedItem.style.opacity = '1';
             draggedItem = null;
         }, 0);
     };
@@ -1244,16 +1257,18 @@ function renderReportCardTemplateEditor(app) {
         const placeholder = document.querySelector('.canvas-item-placeholder');
 
         if (draggedItem) {
-            const newItem = document.createElement('div');
-            newItem.className = 'canvas-item';
-            newItem.draggable = true;
-            newItem.dataset.type = draggedItem.dataset.type;
-            newItem.innerHTML = `<span class="font-bold">${draggedItem.textContent}</span><button class="remove-btn">&times;</button>`;
-            
-            if (placeholder) {
-                canvas.insertBefore(newItem, placeholder);
-            } else {
-                canvas.appendChild(newItem);
+            const componentType = draggedItem.dataset.type;
+            const component = components.find(c => c.type === componentType);
+            if (component) {
+                const newItem = createCanvasItem(component);
+                if (placeholder) {
+                    canvas.insertBefore(newItem, placeholder);
+                } else {
+                    canvas.appendChild(newItem);
+                }
+                 if(draggedItem.classList.contains('canvas-item')){
+                    draggedItem.remove(); // remove original if it was from canvas
+                }
             }
         }
         if(placeholder) placeholder.remove();
@@ -1261,14 +1276,13 @@ function renderReportCardTemplateEditor(app) {
     
     canvas.addEventListener('click', (e) => {
         if(e.target.classList.contains('remove-btn')) {
-            e.target.parentElement.remove();
+            e.target.closest('.canvas-item').remove();
         }
     });
     
     canvas.addEventListener('dragstart', (e) => {
         if(e.target.classList.contains('canvas-item')) {
-            draggedItem = e.target;
-            setTimeout(() => e.target.style.opacity = '0.5', 0);
+            handleDragStart(e);
         }
     });
     canvas.addEventListener('dragend', (e) => {
@@ -1284,7 +1298,7 @@ function renderReportCardTemplateEditor(app) {
     }
 
     function getDragAfterElement(container, y) {
-        const draggableElements = [...container.querySelectorAll('.canvas-item:not(.dragging)')];
+        const draggableElements = [...container.querySelectorAll('.canvas-item:not([style*="opacity: 0.5"])')];
         return draggableElements.reduce((closest, child) => {
             const box = child.getBoundingClientRect();
             const offset = y - box.top - box.height / 2;
@@ -1351,7 +1365,7 @@ export function renderReportCardModalContent(app, rc) {
             case 'schoolHeader':
                 return `<div class="text-center mb-8">
                     ${state.school.logoUrl ? `<img src="${state.school.logoUrl}" class="mx-auto h-20 mb-4">` : ''}
-                    <h1 class="text-4xl">${state.school.name}</h1>
+                    <h1 class="text-4xl font-bold">${state.school.name}</h1>
                     <h2 class="text-3xl">Report Card</h2>
                 </div>`;
             case 'studentInfo':
@@ -1362,22 +1376,51 @@ export function renderReportCardModalContent(app, rc) {
             case 'gradesTable':
                 if (!data.courses) return '';
                 return data.courses.map(course => {
-                    const gradeRows = course.grades.map(g => `<tr><td class="p-2">${g.title}</td><td class="p-2 text-center">${g.score ?? 'N/A'} / ${g.maxPoints}</td></tr>`).join('');
-                    return `<div class="mb-6 page-break">
+                    const gradeRows = course.grades.map(g => `<tr><td class="p-2 border-b">${g.title}</td><td class="p-2 text-center border-b">${g.score ?? 'N/A'} / ${g.maxPoints}</td></tr>`).join('');
+                    const finalGradeHtml = course.finalGradePercent != null 
+                        ? `<tr class="font-bold bg-slate-100"><td class="p-2">Final Grade</td><td class="p-2 text-center">${course.finalGradePercent.toFixed(1)}% (${course.finalLetterGrade})</td></tr>`
+                        : `<tr class="font-bold bg-slate-100"><td class="p-2">Final Grade</td><td class="p-2 text-center">N/A</td></tr>`;
+
+                    return `<div class="mb-6">
                         <h3 class="text-xl font-bold bg-slate-100 p-2">${course.name}</h3>
-                        <table class="w-full text-sm"><thead><tr><th class="p-2 text-left">Assignment</th><th class="p-2 text-center">Score</th></tr></thead><tbody>${gradeRows}</tbody></table>
+                        <table class="w-full text-sm"><thead><tr><th class="p-2 text-left font-semibold border-b">Assignment</th><th class="p-2 text-center font-semibold border-b">Score</th></tr></thead><tbody>${gradeRows}</tbody><tfoot>${finalGradeHtml}</tfoot></table>
                     </div>`;
                 }).join('');
+             case 'finalGrade':
+                if (!data.courses) return '';
+                const summaryRows = data.courses.map(course => {
+                    const gradeDisplay = course.finalGradePercent != null 
+                        ? `${course.finalGradePercent.toFixed(1)}% (${course.finalLetterGrade})` 
+                        : 'N/A';
+                    return `<tr><td class="p-2 border-b">${course.name}</td><td class="p-2 text-center border-b">${gradeDisplay}</td></tr>`;
+                }).join('');
+                return `<div class="mt-6"><h3 class="text-xl font-bold bg-slate-100 p-2">Final Grade Summary</h3>
+                    <table class="w-full text-sm"><thead><tr><th class="p-2 text-left">Course</th><th class="p-2 text-center">Final Grade</th></tr></thead><tbody>${summaryRows}</tbody></table>
+                </div>`;
             case 'attendanceSummary':
                  if (!data.attendance) return '';
                  return `<div class="mt-6"><h3 class="text-xl font-bold bg-slate-100 p-2">Attendance Summary</h3>
                     <p class="p-2"><span class="font-semibold">Absences:</span> ${data.attendance.absent}</p>
                     <p class="p-2"><span class="font-semibold">Tardies:</span> ${data.attendance.tardy}</p>
                 </div>`;
+            case 'gradingScale':
+                return `<div class="mt-6 text-xs"><h3 class="text-xl font-bold bg-slate-100 p-2">Grading Scale</h3>
+                    <div class="p-2 grid grid-cols-4 gap-2">
+                        <p><strong>A:</strong> 90-100</p>
+                        <p><strong>B:</strong> 80-89</p>
+                        <p><strong>C:</strong> 70-79</p>
+                        <p><strong>D:</strong> 60-69</p>
+                        <p><strong>F:</strong> 0-59</p>
+                    </div>
+                </div>`;
             case 'teacherComments':
                  return `<div class="mt-6"><h3 class="text-xl font-bold bg-slate-100 p-2">Comments</h3><div class="p-2 border h-24"></div></div>`
+            case 'principalComment':
+                return `<div class="mt-6"><h3 class="text-xl font-bold bg-slate-100 p-2">Principal's Comment</h3><div class="p-2 border h-24"></div></div>`;
             case 'signatureLine':
                  return `<div class="mt-24 pt-4 border-t"><p class="font-semibold">Administrator Signature</p></div>`;
+            case 'pageBreak':
+                return `<div class="page-break"></div>`;
             default:
                 return '';
         }
