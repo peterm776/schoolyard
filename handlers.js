@@ -40,7 +40,7 @@ export function attachHandlersToWindow(app) {
         openGradingPeriodModal: (periodId=null) => openGradingPeriodModal(app, periodId),
         handleGradingPeriodSubmit: (e) => handleGradingPeriodSubmit(app, e),
         deleteGradingPeriod: (id) => deleteGradingPeriod(app, id),
-        handleReportCardTemplateUpdate: (e) => handleReportCardTemplateUpdate(app, e),
+        handleReportCardTemplateSave: () => handleReportCardTemplateSave(app),
         deleteReportCard: (rcId) => deleteReportCard(app, rcId),
         generateReportCardsForPeriod: (periodId) => generateReportCardsForPeriod(app, periodId),
         openReportCardModal: (rcId) => openReportCardModal(app, rcId),
@@ -659,23 +659,27 @@ export async function handleGradingPeriodSubmit(app, e) {
 }
 export async function deleteGradingPeriod(app, id) { if(confirm('Delete this period?')) { try { await deleteDoc(doc(app.db, 'schools', app.state.school.id, 'gradingPeriods', id)); } catch(e) {showToast(`Error: ${e.message}`, 'error')} } }
 
-export async function handleReportCardTemplateUpdate(app, e) {
-    e.preventDefault();
+export async function handleReportCardTemplateSave(app) {
     const { state, db } = app;
-    const formData = new FormData(e.target);
-    const data = {
-        includeGrades: formData.has('includeGrades'),
-        includeAttendance: formData.has('includeAttendance'),
-        includeComments: formData.has('includeComments')
-    };
+    const canvas = document.getElementById('rc-canvas');
+    if (!canvas) { showToast('Canvas not found.', 'error'); return; }
+
+    const layout = Array.from(canvas.children)
+        .filter(el => el.dataset.type)
+        .map(el => ({ type: el.dataset.type }));
+
+    const templateData = { layout };
+
     try {
         if (state.reportCardTemplates.length > 0) {
-            await updateDoc(doc(db, 'schools', state.school.id, 'reportCardTemplates', state.reportCardTemplates[0].id), data);
+            await updateDoc(doc(db, 'schools', state.school.id, 'reportCardTemplates', state.reportCardTemplates[0].id), templateData);
         } else {
-            await addDoc(collection(db, 'schools', state.school.id, 'reportCardTemplates'), data);
+            await addDoc(collection(db, 'schools', state.school.id, 'reportCardTemplates'), templateData);
         }
-        showToast('Template saved!', 'success');
-    } catch (err) { showToast(`Error: ${err.message}`, 'error'); }
+        showToast('Template saved successfully!', 'success');
+    } catch (err) { 
+        showToast(`Error saving template: ${err.message}`, 'error'); 
+    }
 }
 
 export async function generateReportCardsForPeriod(app, periodId) {
@@ -683,30 +687,38 @@ export async function generateReportCardsForPeriod(app, periodId) {
     if (btn) { btn.disabled = true; btn.textContent = '...'; }
     const { state, db } = app;
     const period = state.gradingPeriods.find(p => p.id === periodId);
-    const template = state.reportCardTemplates[0] || { includeGrades: true, includeAttendance: true };
+    const template = state.reportCardTemplates[0] || {};
+    const layout = template.layout || [
+        { type: 'schoolHeader' }, { type: 'studentInfo' }, { type: 'gradesTable' }, { type: 'attendanceSummary' }
+    ];
     const batch = writeBatch(db);
 
     for (const student of state.students) {
-        const studentData = { courses: [], attendance: {} };
-        if (template.includeGrades) {
-            const enrolledCourses = state.courses.filter(c => app.getEnrolledStudentIds(c.id).includes(student.id));
-            enrolledCourses.forEach(course => {
-                const assignments = state.assignments.filter(a => a.courseId === course.id && new Date(a.dueDate) >= new Date(period.startDate) && new Date(a.dueDate) <= new Date(period.endDate));
-                const grades = assignments.map(a => {
-                    const grade = state.grades.find(g => g.studentId === student.id && g.assignmentId === a.id);
-                    return { title: a.title, score: grade?.score, maxPoints: a.maxPoints };
+        const studentData = {};
+        
+        for (const component of layout) {
+            if (component.type === 'gradesTable') {
+                const enrolledCourses = state.courses.filter(c => app.getEnrolledStudentIds(c.id).includes(student.id));
+                const coursesData = enrolledCourses.map(course => {
+                    const assignments = state.assignments.filter(a => a.courseId === course.id && new Date(a.dueDate) >= new Date(period.startDate) && new Date(a.dueDate) <= new Date(period.endDate));
+                    const grades = assignments.map(a => {
+                        const grade = state.grades.find(g => g.studentId === student.id && g.assignmentId === a.id);
+                        return { title: a.title, score: grade?.score, maxPoints: a.maxPoints };
+                    });
+                    return { name: course.name, grades };
                 });
-                studentData.courses.push({ name: course.name, grades });
-            });
+                studentData.courses = coursesData;
+            }
+            if (component.type === 'attendanceSummary') {
+                let absentCount = 0; let tardyCount = 0;
+                state.attendance.forEach(record => {
+                    const status = record.statuses[student.id];
+                    if (status === 'absent') absentCount++; if (status === 'tardy') tardyCount++;
+                });
+                studentData.attendance = { absent: absentCount, tardy: tardyCount };
+            }
         }
-        if (template.includeAttendance) {
-            let absentCount = 0; let tardyCount = 0;
-            state.attendance.forEach(record => {
-                const status = record.statuses[student.id];
-                if (status === 'absent') absentCount++; if (status === 'tardy') tardyCount++;
-            });
-            studentData.attendance = { absent: absentCount, tardy: tardyCount };
-        }
+
         const rcRef = doc(collection(db, 'schools', state.school.id, 'generatedReportCards'));
         batch.set(rcRef, {
             studentId: student.id,
@@ -714,7 +726,8 @@ export async function generateReportCardsForPeriod(app, periodId) {
             periodId: period.id,
             periodName: period.name,
             generatedAt: serverTimestamp(),
-            data: studentData
+            data: studentData,
+            templateLayout: layout 
         });
     }
     try {

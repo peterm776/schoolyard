@@ -1113,23 +1113,145 @@ function renderReportCardTemplateEditor(app) {
     const { state } = app;
     const content = document.getElementById('rc-content');
     if(!content) return;
-    const template = state.reportCardTemplates[0] || {};
-    
+
+    const components = [
+        { type: 'schoolHeader', name: 'School Header' },
+        { type: 'studentInfo', name: 'Student Info' },
+        { type: 'gradesTable', name: 'Grades Table' },
+        { type: 'attendanceSummary', name: 'Attendance Summary' },
+        { type: 'teacherComments', name: 'Teacher Comments' },
+        { type: 'signatureLine', name: 'Signature Line' },
+    ];
+
     content.innerHTML = `
-        <div class="max-w-md">
-            <h3 class="text-xl font-bold mb-4">Report Card Template</h3>
-            <form id="rc-template-form">
-                <input type="hidden" name="id" value="${template.id || ''}">
-                <div class="space-y-4 bg-slate-50 p-6 rounded-lg">
-                    <label class="flex items-center"><input type="checkbox" name="includeGrades" class="h-5 w-5 rounded border-gray-300 text-primary-600 focus:ring-primary-500" ${template.includeGrades !== false ? 'checked' : ''}><span class="ml-3 text-slate-700 font-semibold">Include Course Grades</span></label>
-                    <label class="flex items-center"><input type="checkbox" name="includeAttendance" class="h-5 w-5 rounded border-gray-300 text-primary-600 focus:ring-primary-500" ${template.includeAttendance !== false ? 'checked' : ''}><span class="ml-3 text-slate-700 font-semibold">Include Attendance Summary</span></label>
-                    <label class="flex items-center"><input type="checkbox" name="includeComments" class="h-5 w-5 rounded border-gray-300 text-primary-600 focus:ring-primary-500" ${template.includeComments ? 'checked' : ''}><span class="ml-3 text-slate-700 font-semibold">Include Teacher Comments (coming soon)</span></label>
-                </div>
-                <button type="submit" class="mt-4 bg-green-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-green-700">Save Template</button>
-            </form>
+        <div class="flex justify-between items-center mb-4">
+            <h3 class="text-xl font-bold">Report Card Template Editor</h3>
+            <button onclick="window.handleReportCardTemplateSave()" class="bg-green-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-green-700">Save Template</button>
+        </div>
+        <div class="report-card-editor">
+            <div id="rc-palette" class="palette">
+                <h4 class="font-bold text-lg mb-2 text-slate-600">Components</h4>
+                <p class="text-sm text-slate-500 mb-4">Drag components onto the canvas.</p>
+                ${components.map(c => `<div class="palette-item" draggable="true" data-type="${c.type}">${c.name}</div>`).join('')}
+            </div>
+            <div id="rc-canvas" class="canvas">
+                <!-- Dropped items will go here -->
+            </div>
         </div>
     `;
-    document.getElementById('rc-template-form').addEventListener('submit', (e) => window.handleReportCardTemplateUpdate(e));
+    
+    // Populate canvas with existing template
+    const template = state.reportCardTemplates[0] || {};
+    const layout = template.layout || [{ type: 'schoolHeader' }, { type: 'studentInfo' }, { type: 'gradesTable' }, { type: 'attendanceSummary' }];
+    const canvas = document.getElementById('rc-canvas');
+    layout.forEach(item => {
+        const component = components.find(c => c.type === item.type);
+        if(component) {
+            const el = document.createElement('div');
+            el.className = 'canvas-item';
+            el.dataset.type = component.type;
+            el.draggable = true;
+            el.innerHTML = `<span class="font-bold">${component.name}</span><button class="remove-btn">&times;</button>`;
+            canvas.appendChild(el);
+        }
+    });
+
+    // Drag and drop logic
+    const paletteItems = document.querySelectorAll('.palette-item');
+    let draggedItem = null;
+
+    const handleDragStart = (e) => {
+        draggedItem = e.target;
+        setTimeout(() => e.target.style.opacity = '0.5', 0);
+    };
+
+    const handleDragEnd = (e) => {
+        setTimeout(() => {
+            e.target.style.opacity = '1';
+            draggedItem = null;
+        }, 0);
+    };
+
+    paletteItems.forEach(item => {
+        item.addEventListener('dragstart', handleDragStart);
+        item.addEventListener('dragend', handleDragEnd);
+    });
+
+    canvas.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        canvas.classList.add('drag-over');
+        const afterElement = getDragAfterElement(canvas, e.clientY);
+        const placeholder = document.querySelector('.canvas-item-placeholder');
+        if (afterElement == null) {
+            if(!placeholder) canvas.appendChild(createPlaceholder());
+            else canvas.appendChild(placeholder);
+        } else {
+             if(!placeholder) canvas.insertBefore(createPlaceholder(), afterElement);
+             else canvas.insertBefore(placeholder, afterElement);
+        }
+    });
+
+    canvas.addEventListener('dragleave', () => {
+        canvas.classList.remove('drag-over');
+    });
+
+    canvas.addEventListener('drop', (e) => {
+        e.preventDefault();
+        canvas.classList.remove('drag-over');
+        const placeholder = document.querySelector('.canvas-item-placeholder');
+
+        if (draggedItem) {
+            const newItem = document.createElement('div');
+            newItem.className = 'canvas-item';
+            newItem.draggable = true;
+            newItem.dataset.type = draggedItem.dataset.type;
+            newItem.innerHTML = `<span class="font-bold">${draggedItem.textContent}</span><button class="remove-btn">&times;</button>`;
+            
+            if (placeholder) {
+                canvas.insertBefore(newItem, placeholder);
+            } else {
+                canvas.appendChild(newItem);
+            }
+        }
+        if(placeholder) placeholder.remove();
+    });
+    
+    canvas.addEventListener('click', (e) => {
+        if(e.target.classList.contains('remove-btn')) {
+            e.target.parentElement.remove();
+        }
+    });
+    
+    canvas.addEventListener('dragstart', (e) => {
+        if(e.target.classList.contains('canvas-item')) {
+            draggedItem = e.target;
+            setTimeout(() => e.target.style.opacity = '0.5', 0);
+        }
+    });
+    canvas.addEventListener('dragend', (e) => {
+        if(e.target.classList.contains('canvas-item')) {
+            handleDragEnd(e);
+        }
+    });
+    
+    const createPlaceholder = () => {
+        const p = document.createElement('div');
+        p.className = 'canvas-item-placeholder';
+        return p;
+    }
+
+    function getDragAfterElement(container, y) {
+        const draggableElements = [...container.querySelectorAll('.canvas-item:not(.dragging)')];
+        return draggableElements.reduce((closest, child) => {
+            const box = child.getBoundingClientRect();
+            const offset = y - box.top - box.height / 2;
+            if (offset < 0 && offset > closest.offset) {
+                return { offset: offset, element: child };
+            } else {
+                return closest;
+            }
+        }, { offset: Number.NEGATIVE_INFINITY }).element;
+    }
 }
 
 export function renderPrintableSchedule(app, studentId) {
@@ -1177,39 +1299,48 @@ export function renderPrintableSchedule(app, studentId) {
 export function renderReportCardModalContent(app, rc) {
     const { state } = app;
     const { data } = rc;
-    
-    let gradesHtml = '';
-    if (data.courses) {
-        gradesHtml = data.courses.map(course => {
-            const gradeRows = course.grades.map(g => `<tr><td class="p-2">${g.title}</td><td class="p-2 text-center">${g.score ?? 'N/A'} / ${g.maxPoints}</td></tr>`).join('');
-            return `<div class="mb-6 page-break">
-                <h3 class="text-xl font-bold bg-slate-100 p-2">${course.name}</h3>
-                <table class="w-full text-sm"><thead><tr><th class="p-2 text-left">Assignment</th><th class="p-2 text-center">Score</th></tr></thead><tbody>${gradeRows}</tbody></table>
-            </div>`;
-        }).join('');
-    }
+    const layout = rc.templateLayout || [
+        { type: 'schoolHeader' }, { type: 'studentInfo' }, { type: 'gradesTable' }, { type: 'attendanceSummary' }
+    ];
 
-    let attendanceHtml = '';
-    if (data.attendance) {
-        attendanceHtml = `<div class="mt-6"><h3 class="text-xl font-bold bg-slate-100 p-2">Attendance Summary</h3>
-            <p class="p-2"><span class="font-semibold">Absences:</span> ${data.attendance.absent}</p>
-            <p class="p-2"><span class="font-semibold">Tardies:</span> ${data.attendance.tardy}</p>
-        </div>`;
-    }
+    const componentHtml = layout.map(component => {
+        switch(component.type) {
+            case 'schoolHeader':
+                return `<div class="text-center mb-8">
+                    ${state.school.logoUrl ? `<img src="${state.school.logoUrl}" class="mx-auto h-20 mb-4">` : ''}
+                    <h1 class="text-4xl">${state.school.name}</h1>
+                    <h2 class="text-3xl">Report Card</h2>
+                </div>`;
+            case 'studentInfo':
+                return `<div class="flex justify-between text-lg mb-6">
+                    <p><strong>Student:</strong> ${rc.studentName}</p>
+                    <p><strong>Grading Period:</strong> ${rc.periodName}</p>
+                </div>`;
+            case 'gradesTable':
+                if (!data.courses) return '';
+                return data.courses.map(course => {
+                    const gradeRows = course.grades.map(g => `<tr><td class="p-2">${g.title}</td><td class="p-2 text-center">${g.score ?? 'N/A'} / ${g.maxPoints}</td></tr>`).join('');
+                    return `<div class="mb-6 page-break">
+                        <h3 class="text-xl font-bold bg-slate-100 p-2">${course.name}</h3>
+                        <table class="w-full text-sm"><thead><tr><th class="p-2 text-left">Assignment</th><th class="p-2 text-center">Score</th></tr></thead><tbody>${gradeRows}</tbody></table>
+                    </div>`;
+                }).join('');
+            case 'attendanceSummary':
+                 if (!data.attendance) return '';
+                 return `<div class="mt-6"><h3 class="text-xl font-bold bg-slate-100 p-2">Attendance Summary</h3>
+                    <p class="p-2"><span class="font-semibold">Absences:</span> ${data.attendance.absent}</p>
+                    <p class="p-2"><span class="font-semibold">Tardies:</span> ${data.attendance.tardy}</p>
+                </div>`;
+            case 'teacherComments':
+                 return `<div class="mt-6"><h3 class="text-xl font-bold bg-slate-100 p-2">Comments</h3><div class="p-2 border h-24"></div></div>`
+            case 'signatureLine':
+                 return `<div class="mt-24 pt-4 border-t"><p class="font-semibold">Administrator Signature</p></div>`;
+            default:
+                return '';
+        }
+    }).join('');
 
-    return `<div id="printable-report-card" class="printable-report">
-        <div class="text-center mb-8">
-            ${state.school.logoUrl ? `<img src="${state.school.logoUrl}" class="mx-auto h-20 mb-4">` : ''}
-            <h1 class="text-4xl">${state.school.name}</h1>
-            <h2 class="text-3xl">Report Card</h2>
-        </div>
-        <div class="flex justify-between text-lg mb-6">
-            <p><strong>Student:</strong> ${rc.studentName}</p>
-            <p><strong>Grading Period:</strong> ${rc.periodName}</p>
-        </div>
-        ${gradesHtml}
-        ${attendanceHtml}
-    </div>`;
+    return `<div id="printable-report-card" class="printable-report">${componentHtml}</div>`;
 }
 
 export function renderParentStatementModalContent(app, parent) {
