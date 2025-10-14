@@ -804,7 +804,7 @@ export async function generateReportCardsForPeriod(app, periodId) {
             
             const grades = assignments.map(a => {
                 const grade = state.grades.find(g => g.studentId === student.id && g.assignmentId === a.id);
-                const score = grade?.score;
+                const score = grade?.score ?? null;
                 const maxPoints = a.maxPoints ? Number(a.maxPoints) : 0;
                 
                 if (score != null && maxPoints > 0) { // Use != null to include 0 scores
@@ -909,31 +909,55 @@ export function generatePdfFromHtml(app, elementId, pdfTitle) {
     const { jsPDF } = jspdf;
     const source = document.getElementById(elementId);
     if (!source) {
-        console.error('Element not found for PDF generation');
+        console.error('Element not found for PDF generation:', elementId);
+        showToast('Could not find element to print.', 'error');
         return;
     }
     showToast('Generating PDF...', 'success');
-    html2canvas(source, { scale: 2 }).then(canvas => {
+    
+    html2canvas(source, {
+        scale: 2, // Higher scale for better quality
+        useCORS: true,
+        windowWidth: source.scrollWidth,
+        windowHeight: source.scrollHeight
+    }).then(canvas => {
         const imgData = canvas.toDataURL('image/png');
-        const pdf = new jsPDF('p', 'mm', 'a4');
+        
+        // Use 'letter' paper size
+        const pdf = new jsPDF({
+            orientation: 'p',
+            unit: 'mm',
+            format: 'letter'
+        });
+
         const pdfWidth = pdf.internal.pageSize.getWidth();
         const pdfHeight = pdf.internal.pageSize.getHeight();
+
         const canvasWidth = canvas.width;
         const canvasHeight = canvas.height;
-        const ratio = canvasWidth / canvasHeight;
         
-        let newCanvasWidth = pdfWidth;
-        let newCanvasHeight = newCanvasWidth / ratio;
-        
-        if (newCanvasHeight > pdfHeight) {
-            newCanvasHeight = pdfHeight;
-            newCanvasWidth = newCanvasHeight * ratio;
+        // Calculate the height of the image scaled to the PDF's width
+        const imgHeight = pdfWidth * (canvasHeight / canvasWidth);
+
+        let heightLeft = imgHeight;
+        let position = 0;
+
+        // Add the first page
+        pdf.addImage(imgData, 'PNG', 0, position, pdfWidth, imgHeight);
+        heightLeft -= pdfHeight;
+
+        // Add new pages if content is longer than one page
+        while (heightLeft > 0) {
+            position -= pdfHeight;
+            pdf.addPage();
+            pdf.addImage(imgData, 'PNG', 0, position, pdfWidth, imgHeight);
+            heightLeft -= pdfHeight;
         }
 
-        const xOffset = (pdfWidth - newCanvasWidth) / 2;
-
-        pdf.addImage(imgData, 'PNG', xOffset, 0, newCanvasWidth, newCanvasHeight);
         pdf.save(`${pdfTitle}.pdf`);
+    }).catch(err => {
+        console.error("PDF Generation failed:", err);
+        showToast('PDF generation failed. See console for details.', 'error');
     });
 }
 

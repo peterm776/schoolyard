@@ -41,6 +41,7 @@ export const templates = {
             <aside id="sidebar" class="sidebar fixed top-0 left-0 h-full bg-slate-900 text-white w-64 p-6 z-20 md:translate-x-0 overflow-y-auto">
                 <div id="sidebar-header" class="flex items-center justify-center mb-10 h-10"></div>
                 <nav id="nav"></nav>
+                <div class="absolute bottom-4 left-0 right-0 text-center text-xs text-slate-500">Version 1.2.0</div>
             </aside>
             <main id="main-content" class="main-content flex-1 md:ml-64 overflow-y-auto">
                 <div class="p-6 md:p-8">
