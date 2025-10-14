@@ -1,5 +1,6 @@
 import { getAuth, onAuthStateChanged, signOut, updateProfile } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
 import { getFirestore, collection, doc, getDoc, onSnapshot, query, where, getDocs, collectionGroup, runTransaction, serverTimestamp, orderBy } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+import { getStorage } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js";
 import * as V from './views.js';
 import * as C from './constants.js';
 import { attachHandlersToWindow } from './handlers.js';
@@ -8,12 +9,14 @@ import { applyTheme, showToast } from './utils.js';
 export class SchoolApp {
     auth;
     db;
+    storage;
     
     state = {
         user: null, school: null, allUsers: [], users: [], students: [], teachers: [], courses: [],
         dayTypes: [], timeBlocks: [], masterCalendar: [], schedules: [],
         assignments: [], grades: [], attendance: [], attendanceNotes: [], events: [], announcements: [],
         tuitionItems: [], launchpadLinks: [], gradingPeriods: [], reportCardTemplates: [], generatedReportCards: [],
+        homeworkSubmissions: [],
         unsubscribeListeners: [], currentCalendar: null,
     };
 
@@ -22,11 +25,13 @@ export class SchoolApp {
     constructor(firebaseApp) {
         this.auth = getAuth(firebaseApp);
         this.db = getFirestore(firebaseApp);
+        this.storage = getStorage(firebaseApp);
         this.routes = {
             'myday': { render: (ids, params) => V.renderMyDay(this) }, 
             'dashboard': { render: (ids, params) => V.renderParentDashboard(this) },
             'launchpad': { render: (ids, params) => V.renderLaunchpad(this) },
             'courses': { render: (ids, params) => V.renderCourses(this, ids, params) }, 
+            'homework': { render: (ids, params) => V.renderHomework(this) },
             'schedule': { render: (ids, params) => V.renderScheduleEditor(this, ids) },
             'attendance': { render: (ids, params) => V.renderAttendance(this) },
             'gradebook': { render: (ids, params) => V.renderGradebook(this, ids, params) }, 
@@ -191,9 +196,9 @@ export class SchoolApp {
         let collectionsToListen = [];
 
         if (role === 'admin') {
-            collectionsToListen = ['users', 'courses', 'dayTypes', 'timeBlocks', 'masterCalendar', 'schedules', 'assignments', 'grades', 'attendance', 'attendanceNotes', 'events', 'announcements', 'tuitionItems', 'launchpadLinks', 'gradingPeriods', 'reportCardTemplates', 'generatedReportCards'];
+            collectionsToListen = ['users', 'courses', 'dayTypes', 'timeBlocks', 'masterCalendar', 'schedules', 'assignments', 'grades', 'attendance', 'attendanceNotes', 'events', 'announcements', 'tuitionItems', 'launchpadLinks', 'gradingPeriods', 'reportCardTemplates', 'generatedReportCards', 'homeworkSubmissions'];
         } else if (role === 'teacher') {
-            collectionsToListen = ['users', 'courses', 'dayTypes', 'timeBlocks', 'masterCalendar', 'schedules', 'assignments', 'grades', 'attendance', 'attendanceNotes', 'events', 'announcements', 'gradingPeriods', 'reportCardTemplates', 'launchpadLinks'];
+            collectionsToListen = ['users', 'courses', 'dayTypes', 'timeBlocks', 'masterCalendar', 'schedules', 'assignments', 'grades', 'attendance', 'attendanceNotes', 'events', 'announcements', 'gradingPeriods', 'reportCardTemplates', 'launchpadLinks', 'homeworkSubmissions'];
         } else {
             collectionsToListen = ['users', 'courses', 'dayTypes', 'timeBlocks', 'masterCalendar', 'events', 'announcements', 'launchpadLinks', 'assignments', 'gradingPeriods'];
         }
@@ -208,7 +213,7 @@ export class SchoolApp {
             const studentIds = role === 'parent' ? (this.state.user.childrenIds || []) : [this.state.user.id];
 
             if (studentIds.length > 0) {
-                 const collectionsToFilter = ['grades', 'tuitionItems', 'generatedReportCards', 'schedules'];
+                 const collectionsToFilter = ['grades', 'tuitionItems', 'generatedReportCards', 'schedules', 'homeworkSubmissions'];
                  collectionsToFilter.forEach(key => {
                      const q = query(collection(this.db, 'schools', this.state.school.id, key), where('studentId', 'in', studentIds));
                      const unsub = onSnapshot(q, (snap) => handleSnapshot(key, snap), (err) => handleListenerError(key, err));

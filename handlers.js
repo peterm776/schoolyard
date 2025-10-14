@@ -1,5 +1,6 @@
 import { signOut, createUserWithEmailAndPassword, updateProfile, signInWithEmailAndPassword, GoogleAuthProvider, signInWithPopup } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
 import { doc, updateDoc, addDoc, collection, setDoc, deleteDoc, writeBatch, query, where, getDocs, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+import { ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js";
 import { showToast, openModal, closeModal } from './utils.js';
 import { renderPrintableSchedule, renderReportCardModalContent, renderParentStatementModalContent } from './views.js';
 
@@ -49,6 +50,9 @@ export function attachHandlersToWindow(app) {
         openParentStatementModal: (parentId = null) => openParentStatementModal(app, parentId),
         openPrintableScheduleModal: (studentId) => openPrintableScheduleModal(app, studentId),
         handleProfileUpdate: (e) => handleProfileUpdate(app, e),
+        openHomeworkModal: (assignmentId) => openHomeworkModal(app, assignmentId),
+        handleHomeworkFileUpload: (e, assignmentId) => handleHomeworkFileUpload(app, e, assignmentId),
+        handleSubmissionGradeForm: (e, submissionId) => handleSubmissionGradeForm(app, e, submissionId),
         closeModal: closeModal,
     };
     
@@ -329,6 +333,11 @@ export function openAssignmentModal(app, assignmentId, courseId) {
         <input type="hidden" name="courseId" value="${courseId}">
         <label class="block font-semibold mb-1">Title</label>
         <input type="text" name="title" value="${assignment?.title || ''}" class="w-full p-2 border rounded-lg mb-4" required>
+        <label class="block font-semibold mb-1">Type</label>
+        <select name="type" class="w-full p-2 border rounded-lg mb-4">
+            <option value="classwork" ${assignment?.type === 'classwork' || !assignment?.type ? 'selected' : ''}>Classwork</option>
+            <option value="homework" ${assignment?.type === 'homework' ? 'selected' : ''}>Homework</option>
+        </select>
         <label class="block font-semibold mb-1">Due Date</label>
         <input type="date" name="dueDate" value="${assignment?.dueDate || ''}" class="w-full p-2 border rounded-lg mb-4" required>
         <label class="block font-semibold mb-1">Max Points</label>
@@ -800,4 +809,150 @@ export function generatePdfFromHtml(app, elementId, pdfTitle) {
         pdf.addImage(imgData, 'PNG', 0, 0, canvas.width, canvas.height);
         pdf.save(`${pdfTitle}.pdf`);
     });
+}
+
+
+// --- HOMEWORK HANDLERS ---
+export async function handleHomeworkFileUpload(app, e, assignmentId) {
+    e.preventDefault();
+    const { state, db, storage } = app;
+    const form = e.target;
+    const fileInput = form.querySelector('input[type="file"]');
+    const file = fileInput.files[0];
+    if (!file) {
+        showToast("Please select a file to upload.", "error");
+        return;
+    }
+
+    const submitBtn = form.querySelector('button[type="submit"]');
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = 'Uploading...';
+
+    try {
+        const studentId = state.user.id;
+        const assignment = state.assignments.find(a => a.id === assignmentId);
+        
+        const storageRef = ref(storage, `schools/${state.school.id}/homeworkSubmissions/${studentId}/${assignmentId}/${file.name}`);
+        const snapshot = await uploadBytes(storageRef, file);
+        const downloadURL = await getDownloadURL(snapshot.ref);
+
+        const existingSubmission = state.homeworkSubmissions.find(s => s.studentId === studentId && s.assignmentId === assignmentId);
+
+        const submissionData = {
+            studentId,
+            assignmentId,
+            courseId: assignment.courseId,
+            submittedAt: serverTimestamp(),
+            fileUrl: downloadURL,
+            fileName: file.name,
+            status: 'submitted'
+        };
+
+        if (existingSubmission) {
+            await updateDoc(doc(db, 'schools', state.school.id, 'homeworkSubmissions', existingSubmission.id), submissionData);
+            showToast('Homework updated successfully!', 'success');
+        } else {
+            await addDoc(collection(db, 'schools', state.school.id, 'homeworkSubmissions'), submissionData);
+            showToast('Homework submitted successfully!', 'success');
+        }
+        
+        closeModal();
+    } catch (error) {
+        console.error("Upload failed:", error);
+        showToast(`Upload failed: ${error.message}`, 'error');
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Submit';
+    }
+}
+
+export function openHomeworkModal(app, assignmentId) {
+    const { state } = app;
+    const assignment = state.assignments.find(a => a.id === assignmentId);
+    if (!assignment) {
+        showToast("Homework assignment not found.", "error");
+        return;
+    }
+
+    const title = `${assignment.title}`;
+    let body = `<div class="mb-4 p-4 bg-slate-50 rounded-lg"><p class="font-semibold text-slate-700">Due Date: <span class="font-normal">${assignment.dueDate}</span></p><p class="font-semibold text-slate-700">Points: <span class="font-normal">${assignment.maxPoints}</span></p></div>`;
+
+    if (state.user.role === 'student') {
+        const mySubmission = state.homeworkSubmissions.find(s => s.studentId === state.user.id && s.assignmentId === assignment.id);
+        body += `
+            <h4 class="font-bold text-lg text-slate-800 mb-2">My Submission</h4>
+            <form id="homework-upload-form" onsubmit="window.handleHomeworkFileUpload(event, '${assignmentId}')">
+                <label for="homework-file-input" class="file-upload-area">
+                    <p class="font-semibold text-slate-700">Drag & Drop or Click to Upload</p>
+                    <p class="text-sm text-slate-500">Attach a photo of your work</p>
+                    <input id="homework-file-input" type="file" accept="image/*,application/pdf">
+                </label>
+                <div id="file-preview-container" class="mt-4 text-center"></div>
+                <button type="submit" class="w-full mt-4 bg-green-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-green-700">Submit</button>
+            </form>
+        `;
+
+        if (mySubmission) {
+            body += `<div class="mt-6 border-t pt-4">
+                <p class="font-semibold text-slate-800">Status: <span class="capitalize font-normal px-2 py-1 rounded-full ${mySubmission.status === 'submitted' ? 'bg-blue-100 text-blue-800' : 'bg-green-100 text-green-800'}">${mySubmission.status}</span></p>
+                <p class="font-semibold mt-2">Submitted File: <a href="${mySubmission.fileUrl}" target="_blank" class="text-primary-600 hover:underline">${mySubmission.fileName}</a></p>
+                <img src="${mySubmission.fileUrl}" alt="Submission preview" class="submission-preview mx-auto">
+                ${mySubmission.grade ? `<p class="font-semibold mt-2">Grade: <span class="font-bold">${mySubmission.grade} / ${assignment.maxPoints}</span></p>` : ''}
+                ${mySubmission.feedback ? `<div class="mt-2"><p class="font-semibold">Feedback:</p><p class="p-2 bg-slate-100 rounded mt-1">${mySubmission.feedback}</p></div>` : ''}
+            </div>`;
+        }
+    } else if (app.canEdit(assignment)) { // Teacher/Admin view
+        const enrolledStudentIds = app.getEnrolledStudentIds(assignment.courseId);
+        const students = state.students.filter(s => enrolledStudentIds.includes(s.id));
+        
+        let studentListHtml = students.map(student => {
+            const submission = state.homeworkSubmissions.find(s => s.studentId === student.id && s.assignmentId === assignment.id);
+            return `
+                <div class="submission-list-item">
+                    <p class="font-semibold">${student.displayName}</p>
+                    ${submission ? `
+                        <div class="flex items-center gap-4">
+                            <a href="${submission.fileUrl}" target="_blank" class="submission-file-link">View File</a>
+                            <form class="flex items-center gap-2" onsubmit="window.handleSubmissionGradeForm(event, '${submission.id}')">
+                                <input type="number" name="grade" placeholder="Grade" class="p-1 border rounded w-20 text-center" value="${submission.grade || ''}">
+                                <span class="text-slate-400">/ ${assignment.maxPoints}</span>
+                                <button type="submit" class="text-xs bg-green-500 text-white font-bold py-1 px-2 rounded hover:bg-green-600">SAVE</button>
+                            </form>
+                        </div>
+                    ` : `
+                        <span class="text-sm text-slate-400 font-semibold">Not Submitted</span>
+                    `}
+                </div>`;
+        }).join('');
+        
+        body += `<h4 class="font-bold text-lg text-slate-800 mb-2 mt-4">Student Submissions</h4><div class="space-y-1">${studentListHtml}</div>`;
+    }
+
+    openModal(title, body, '2xl');
+    
+    if (state.user.role === 'student') {
+        const fileInput = document.getElementById('homework-file-input');
+        const previewContainer = document.getElementById('file-preview-container');
+        fileInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                previewContainer.innerHTML = `<p class="text-slate-600">Selected: ${file.name}</p>`;
+            }
+        });
+    }
+}
+
+export async function handleSubmissionGradeForm(app, e, submissionId) {
+    e.preventDefault();
+    const { db } = app;
+    const grade = e.target.elements.grade.value;
+    
+    try {
+        await updateDoc(doc(db, 'schools', app.state.school.id, 'homeworkSubmissions', submissionId), {
+            grade: Number(grade),
+            status: 'graded'
+        });
+        showToast('Grade saved!', 'success');
+    } catch (err) {
+        showToast(`Error saving grade: ${err.message}`, 'error');
+    }
 }

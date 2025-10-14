@@ -141,3 +141,51 @@ body { font-family: 'Inter', sans-serif; background-color: #f8fafc; }
 .canvas-item:hover .remove-btn {
     opacity: 1;
 }
+
+/* Homework Submission Styles */
+.submission-list-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.75rem;
+    border-radius: 0.375rem;
+}
+.submission-list-item:nth-child(odd) {
+    background-color: #f8fafc;
+}
+.submission-file-link {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.25rem 0.5rem;
+    background-color: #e0f2fe;
+    color: #0c4a6e;
+    border-radius: 0.25rem;
+    font-size: 0.875rem;
+    font-weight: 500;
+    text-decoration: none;
+    transition: background-color 0.2s;
+}
+.submission-file-link:hover {
+    background-color: #bae6fd;
+}
+.file-upload-area {
+    border: 2px dashed #cbd5e1;
+    border-radius: 0.5rem;
+    padding: 2rem;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+.file-upload-area:hover, .file-upload-area.drag-over {
+     border-color: var(--primary-500);
+     background-color: rgb(var(--primary-100) / 0.5);
+}
+.file-upload-area input[type="file"] {
+    display: none;
+}
+.submission-preview {
+    max-height: 200px;
+    border-radius: 0.5rem;
+    margin-top: 1rem;
+    border: 1px solid #e2e8f0;
+}

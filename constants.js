@@ -10,6 +10,7 @@ export const allNavLinks = {
     parentDashboard: { href: 'dashboard', text: 'Dashboard', icon: `<svg class="h-6 w-6 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" /></svg>`},
     launchpad: { href: 'launchpad', text: 'Launchpad', icon: `<svg class="h-6 w-6 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" /></svg>`},
     courses: { href: 'courses', text: 'Courses', icon: `<svg class="h-6 w-6 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M12 14l9-5-9-5-9 5 9 5z" /><path d="M12 14l6.16-3.422a12.083 12.083 0 01.665 6.479A11.952 11.952 0 0112 20.055a11.952 11.952 0 01-6.824-2.998 12.078 12.078 0 01.665-6.479L12 14z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 14l9-5-9-5-9 5 9 5zm0 0v6" /></svg>`},
+    homework: { href: 'homework', text: 'Homework', icon: `<svg class="h-6 w-6 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.246 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" /></svg>`},
     attendance: { href: 'attendance', text: 'Attendance', icon: `<svg class="h-6 w-6 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" /></svg>`},
     gradebook: { href: 'gradebook', text: 'Gradebook', icon: `<svg class="h-6 w-6 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7v8a2 2 0 002 2h4M8 7a2 2 0 012-2h4a2 2 0 012 2v8a2 2 0 01-2 2h-4a2 2 0 01-2-2z"/></svg>`},
     reportCards: { href: 'report-cards', text: 'Report Cards', icon: `<svg class="h-6 w-6 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>`},
@@ -22,10 +23,10 @@ export const allNavLinks = {
 };
 
 export const rolesConfig = {
-    admin: ['myday', 'launchpad', 'users', 'courses', 'attendance', 'gradebook', 'reportCards', 'calendar', 'reports', 'tuition', 'profile', 'settings'],
-    teacher: ['myday', 'launchpad', 'courses', 'attendance', 'gradebook', 'reportCards', 'calendar', 'profile'],
-    student: ['myday', 'launchpad', 'courses', 'gradebook', 'reportCards', 'calendar', 'tuition', 'profile'],
-    parent: ['parentDashboard', 'launchpad', 'gradebook', 'reportCards', 'calendar', 'tuition', 'reports', 'profile'],
+    admin: ['myday', 'launchpad', 'users', 'courses', 'homework', 'attendance', 'gradebook', 'reportCards', 'calendar', 'reports', 'tuition', 'profile', 'settings'],
+    teacher: ['myday', 'launchpad', 'courses', 'homework', 'attendance', 'gradebook', 'reportCards', 'calendar', 'profile'],
+    student: ['myday', 'launchpad', 'courses', 'homework', 'gradebook', 'reportCards', 'calendar', 'tuition', 'profile'],
+    parent: ['parentDashboard', 'launchpad', 'homework', 'gradebook', 'reportCards', 'calendar', 'tuition', 'reports', 'profile'],
 };
 
 export const templates = {

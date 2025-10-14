@@ -337,7 +337,7 @@ function renderCourseClasswork(app, course) {
     if(!content) return;
     let createButton = app.canEdit(course) ? `<button onclick="window.openAssignmentModal(null, '${course.id}')" class="bg-primary-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-primary-600">Create Assignment</button>` : '';
     const assignments = state.assignments.filter(a => a.courseId === course.id).sort((a,b) => new Date(b.dueDate).getTime() - new Date(a.dueDate).getTime());
-    let assignmentsHtml = assignments.length > 0 ? `<ul class="space-y-3">${assignments.map(a => `<li class="p-4 bg-slate-50 rounded-md flex justify-between items-center"><div><p class="font-semibold text-lg text-slate-800">${a.title}</p><p class="text-sm text-slate-500">Due: ${a.dueDate} &bull; ${a.maxPoints || 0} pts</p></div>${app.canEdit(course) ? `<div class="flex space-x-2"><button onclick="window.openAssignmentModal('${a.id}', '${course.id}')" class="text-yellow-600 hover:text-yellow-800 font-semibold">Edit</button><button onclick="window.deleteAssignment('${a.id}')" class="text-red-600 hover:text-red-800 font-semibold">Delete</button></div>` : ''}</li>`).join('')}</ul>` : `<p class="text-center text-slate-500 py-8">No assignments have been created for this course yet.</p>`;
+    let assignmentsHtml = assignments.length > 0 ? `<ul class="space-y-3">${assignments.map(a => `<li class="p-4 bg-slate-50 rounded-md flex justify-between items-center"><div><p class="font-semibold text-lg text-slate-800">${a.title} <span class="text-xs font-medium uppercase px-2 py-1 rounded-full ${a.type === 'homework' ? 'bg-indigo-100 text-indigo-800' : 'bg-amber-100 text-amber-800'}">${a.type || 'classwork'}</span></p><p class="text-sm text-slate-500">Due: ${a.dueDate} &bull; ${a.maxPoints || 0} pts</p></div>${app.canEdit(course) ? `<div class="flex space-x-2"><button onclick="window.openAssignmentModal('${a.id}', '${course.id}')" class="text-yellow-600 hover:text-yellow-800 font-semibold">Edit</button><button onclick="window.deleteAssignment('${a.id}')" class="text-red-600 hover:text-red-800 font-semibold">Delete</button></div>` : ''}</li>`).join('')}</ul>` : `<p class="text-center text-slate-500 py-8">No assignments have been created for this course yet.</p>`;
     content.innerHTML = `<div class="flex justify-end mb-4">${createButton}</div>${assignmentsHtml}`;
 }
 
@@ -366,6 +366,49 @@ function renderCourseAttendance(app, course) {
       content.innerHTML = html;
       document.getElementById('save-attendance-btn').addEventListener('click', () => window.handleAttendanceSubmit(course.id, today, todaysAttendance?.id));
 }
+
+export function renderHomework(app) {
+    setPageTitle('Homework Calendar');
+    const content = document.getElementById('content');
+    if (!content) return;
+    content.innerHTML = `<div id='homework-calendar'></div>`;
+    
+    setTimeout(() => {
+        const calendarEl = document.getElementById('homework-calendar');
+        if (!calendarEl) return;
+        
+        const { state } = app;
+        const homeworkAssignments = state.assignments.filter(a => a.type === 'homework');
+        
+        const events = homeworkAssignments.map(hw => {
+            const course = state.courses.find(c => c.id === hw.courseId);
+            return {
+                id: hw.id,
+                title: `${course?.name || 'Course'}: ${hw.title}`,
+                start: hw.dueDate,
+                allDay: true,
+                backgroundColor: '#4f46e5', // Indigo color for homework
+                borderColor: '#4f46e5'
+            };
+        });
+
+        if (state.currentCalendar) state.currentCalendar.destroy();
+        state.currentCalendar = new FullCalendar.Calendar(calendarEl, {
+            initialView: 'dayGridMonth',
+            headerToolbar: {
+                left: 'prev,next today',
+                center: 'title',
+                right: 'dayGridMonth,timeGridWeek,listWeek'
+            },
+            events: events,
+            eventClick: (info) => {
+                window.openHomeworkModal(info.event.id);
+            }
+        });
+        state.currentCalendar.render();
+    }, 0);
+}
+
 
 export function renderAttendance(app) {
     setPageTitle('Attendance');
