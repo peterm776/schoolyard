@@ -906,8 +906,11 @@ export function openPaymentModal(app) {
 
 // --- UTILITY HANDLERS ---
 export function generatePdfFromHtml(app, elementId, pdfTitle) {
+    // This function now uses the more robust `pdf.html()` method which handles scaling and pagination automatically.
+    // This fixes issues with content appearing "zoomed in", blurry, or splitting incorrectly across pages.
     const { jsPDF } = jspdf;
     const source = document.getElementById(elementId);
+
     if (!source) {
         console.error('Element not found for PDF generation:', elementId);
         showToast('Could not find element to print.', 'error');
@@ -915,46 +918,29 @@ export function generatePdfFromHtml(app, elementId, pdfTitle) {
     }
     showToast('Generating PDF...', 'success');
     
-    html2canvas(source, {
-        scale: 2, // Higher scale for better quality
-        useCORS: true,
-        windowWidth: source.scrollWidth,
-        windowHeight: source.scrollHeight
-    }).then(canvas => {
-        const imgData = canvas.toDataURL('image/png');
-        
-        // Use 'letter' paper size
-        const pdf = new jsPDF({
-            orientation: 'p',
-            unit: 'mm',
-            format: 'letter'
-        });
+    const pdf = new jsPDF({
+        orientation: 'portrait',
+        unit: 'pt',
+        format: 'letter'
+    });
 
-        const pdfWidth = pdf.internal.pageSize.getWidth();
-        const pdfHeight = pdf.internal.pageSize.getHeight();
-
-        const canvasWidth = canvas.width;
-        const canvasHeight = canvas.height;
-        
-        // Calculate the height of the image scaled to the PDF's width
-        const imgHeight = pdfWidth * (canvasHeight / canvasWidth);
-
-        let heightLeft = imgHeight;
-        let position = 0;
-
-        // Add the first page
-        pdf.addImage(imgData, 'PNG', 0, position, pdfWidth, imgHeight);
-        heightLeft -= pdfHeight;
-
-        // Add new pages if content is longer than one page
-        while (heightLeft > 0) {
-            position -= pdfHeight;
-            pdf.addPage();
-            pdf.addImage(imgData, 'PNG', 0, position, pdfWidth, imgHeight);
-            heightLeft -= pdfHeight;
-        }
-
-        pdf.save(`${pdfTitle}.pdf`);
+    pdf.html(source, {
+        callback: function (doc) {
+            doc.save(`${pdfTitle}.pdf`);
+        },
+        margin: [40, 40, 40, 40], // [top, right, bottom, left] in points
+        autoPaging: 'slice', // This is key to handle long content
+        html2canvas: {
+            scale: 2, // Use a higher scale for better resolution to avoid blurriness
+            useCORS: true,
+            windowHeight: source.scrollHeight // ensure full height is captured
+        },
+        // The width of the content in the PDF. Letter paper is 612pt wide.
+        // 612 - 40 (left margin) - 40 (right margin) = 532pt
+        width: 532, 
+        // The width of the "browser" window html2canvas should use to render the element.
+        // Using the element's own scrollWidth ensures the layout is as intended.
+        windowWidth: source.scrollWidth, 
     }).catch(err => {
         console.error("PDF Generation failed:", err);
         showToast('PDF generation failed. See console for details.', 'error');
