@@ -601,6 +601,7 @@ export function renderUsers(app) {
                     <option value="student">Student</option>
                     <option value="parent">Parent</option>
                 </select>
+                <button onclick="window.openUserCsvImportModal()" class="bg-indigo-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-indigo-700 whitespace-nowrap">Import CSV</button>
                 <button onclick="window.openUserModal()" class="bg-primary-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-primary-600 whitespace-nowrap">Add User</button>
             </div>
         </div>
@@ -1249,6 +1250,15 @@ function renderReportCardTemplateEditor(app) {
 
     canvas.addEventListener('dragleave', () => {
         canvas.classList.remove('drag-over');
+        const placeholder = document.querySelector('.canvas-item-placeholder');
+        if (placeholder) {
+            // A brief delay helps prevent flickering when moving over child elements
+            setTimeout(() => {
+                if (!canvas.matches(':hover')) {
+                     placeholder.remove();
+                }
+            }, 100);
+        }
     });
 
     canvas.addEventListener('drop', (e) => {
@@ -1292,6 +1302,8 @@ function renderReportCardTemplateEditor(app) {
     });
     
     const createPlaceholder = () => {
+        const existing = document.querySelector('.canvas-item-placeholder');
+        if (existing) return existing;
         const p = document.createElement('div');
         p.className = 'canvas-item-placeholder';
         return p;

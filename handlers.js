@@ -10,6 +10,8 @@ export function attachHandlersToWindow(app) {
         openUserModal: (userId = null) => openUserModal(app, userId),
         handleUserFormSubmit: (e) => handleUserFormSubmit(app, e),
         deleteUser: (userId) => deleteUser(app, userId),
+        openUserCsvImportModal: () => openUserCsvImportModal(app),
+        handleUserCsvImport: (e) => handleUserCsvImport(app, e),
         handleAttendanceNoteSubmit: (e) => handleAttendanceNoteSubmit(app, e),
         handleScheduleFormSubmit: (e, studentId) => handleScheduleFormSubmit(app, e, studentId),
         openCourseModal: (courseId = null, event) => openCourseModal(app, courseId, event),
@@ -227,6 +229,87 @@ export async function deleteUser(app, userId) {
         }
     }
 }
+
+export function openUserCsvImportModal(app) {
+    const title = 'Import Users from CSV';
+    const body = `
+        <form id="user-csv-form">
+            <p class="mb-4 text-slate-600">Upload a CSV file with the columns: <strong>displayName, email, role</strong>. The role must be one of 'student', 'teacher', 'parent', or 'admin'.</p>
+            <a href="data:text/csv;charset=utf-8,displayName%2Cemail%2Crole%0AJohn%20Student%2Cjohn.student%40example.com%2Cstudent%0AJane%20Teacher%2Cjane.teacher%40example.com%2Cteacher" download="user_template.csv" class="text-primary-600 hover:underline mb-4 block">Download Template CSV</a>
+            <input type="file" name="csvFile" accept=".csv" class="w-full p-2 border rounded-lg" required>
+            <button type="submit" class="w-full mt-6 bg-green-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-green-700">Import Users</button>
+        </form>
+    `;
+    openModal(title, body);
+    document.getElementById('user-csv-form').addEventListener('submit', (e) => handleUserCsvImport(app, e));
+}
+
+export async function handleUserCsvImport(app, e) {
+    e.preventDefault();
+    const file = e.target.elements.csvFile.files[0];
+    if (!file) {
+        showToast('Please select a CSV file.', 'error');
+        return;
+    }
+
+    const submitBtn = e.target.querySelector('button[type="submit"]');
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Importing...';
+
+    Papa.parse(file, {
+        header: true,
+        skipEmptyLines: true,
+        complete: async (results) => {
+            const users = results.data;
+            const requiredHeaders = ['displayName', 'email', 'role'];
+            const actualHeaders = results.meta.fields;
+            
+            if (!requiredHeaders.every(h => actualHeaders.includes(h))) {
+                showToast('CSV headers must be: displayName, email, role.', 'error');
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Import Users';
+                return;
+            }
+
+            const batch = writeBatch(app.db);
+            let importedCount = 0;
+
+            for (const user of users) {
+                const displayName = user.displayName?.trim();
+                const email = user.email?.trim().toLowerCase();
+                const role = user.role?.trim().toLowerCase();
+                
+                if (displayName && email && ['student', 'teacher', 'parent', 'admin'].includes(role)) {
+                    const newUserRef = doc(collection(app.db, 'schools', app.state.school.id, 'users'));
+                    batch.set(newUserRef, {
+                        displayName,
+                        email,
+                        role,
+                        isPlaceholder: true,
+                        createdAt: serverTimestamp()
+                    });
+                    importedCount++;
+                }
+            }
+
+            try {
+                await batch.commit();
+                showToast(`${importedCount} users imported successfully as invitations.`, 'success');
+                closeModal();
+            } catch (err) {
+                showToast(`Error importing users: ${err.message}`, 'error');
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Import Users';
+            }
+        },
+        error: (err) => {
+            showToast(`CSV parsing error: ${err.message}`, 'error');
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'Import Users';
+        }
+    });
+}
+
 
 // --- DASHBOARD HANDLERS ---
 export async function handleAttendanceNoteSubmit(app, e) {
@@ -712,7 +795,6 @@ export async function generateReportCardsForPeriod(app, periodId) {
     for (const student of state.students) {
         const studentData = {};
         
-        // This logic now runs for all students, ensuring course data is always present.
         const enrolledCourses = state.courses.filter(c => app.getEnrolledStudentIds(c.id).includes(student.id));
         const coursesData = enrolledCourses.map(course => {
             const assignments = state.assignments.filter(a => a.courseId === course.id && new Date(a.dueDate) >= new Date(period.startDate) && new Date(a.dueDate) <= new Date(period.endDate));
@@ -725,7 +807,7 @@ export async function generateReportCardsForPeriod(app, periodId) {
                 const score = grade?.score;
                 const maxPoints = a.maxPoints ? Number(a.maxPoints) : 0;
                 
-                if (score != null && maxPoints > 0) {
+                if (score != null && maxPoints > 0) { // Use != null to include 0 scores
                     totalScore += Number(score);
                     totalMaxPoints += maxPoints;
                 }
@@ -833,12 +915,24 @@ export function generatePdfFromHtml(app, elementId, pdfTitle) {
     showToast('Generating PDF...', 'success');
     html2canvas(source, { scale: 2 }).then(canvas => {
         const imgData = canvas.toDataURL('image/png');
-        const pdf = new jsPDF({
-            orientation: 'p',
-            unit: 'px',
-            format: [canvas.width, canvas.height]
-        });
-        pdf.addImage(imgData, 'PNG', 0, 0, canvas.width, canvas.height);
+        const pdf = new jsPDF('p', 'mm', 'a4');
+        const pdfWidth = pdf.internal.pageSize.getWidth();
+        const pdfHeight = pdf.internal.pageSize.getHeight();
+        const canvasWidth = canvas.width;
+        const canvasHeight = canvas.height;
+        const ratio = canvasWidth / canvasHeight;
+        
+        let newCanvasWidth = pdfWidth;
+        let newCanvasHeight = newCanvasWidth / ratio;
+        
+        if (newCanvasHeight > pdfHeight) {
+            newCanvasHeight = pdfHeight;
+            newCanvasWidth = newCanvasHeight * ratio;
+        }
+
+        const xOffset = (pdfWidth - newCanvasWidth) / 2;
+
+        pdf.addImage(imgData, 'PNG', xOffset, 0, newCanvasWidth, newCanvasHeight);
         pdf.save(`${pdfTitle}.pdf`);
     });
 }
