@@ -1,29 +1,53 @@
 import { signOut, createUserWithEmailAndPassword, updateProfile, signInWithEmailAndPassword, GoogleAuthProvider, signInWithPopup } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
 import { doc, updateDoc, addDoc, collection, setDoc, deleteDoc, writeBatch, query, where, getDocs, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-import { ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js";
+import { ref, uploadBytes, getDownloadURL, deleteObject } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js";
 import { showToast, openModal, closeModal } from './utils.js';
 import { renderPrintableSchedule, renderReportCardModalContent, renderParentStatementModalContent } from './views.js';
+import { Type } from "https://esm.run/@google/genai";
 
 // This function makes class methods available on the window object for inline event handlers.
 export function attachHandlersToWindow(app) {
     const handlers = {
+        // Auth
+        handleLoginSubmit: (e) => handleLoginSubmit(app, e),
+        handleGoogleLogin: () => handleGoogleLogin(app),
+        handleSignupSubmit: (e) => handleSignupSubmit(app, e),
+        handleCreateSchoolSubmit: (e) => handleCreateSchoolSubmit(app, e),
+
+        // User Management
         openUserModal: (userId = null) => openUserModal(app, userId),
         handleUserFormSubmit: (e) => handleUserFormSubmit(app, e),
         deleteUser: (userId) => deleteUser(app, userId),
         openUserCsvImportModal: () => openUserCsvImportModal(app),
         handleUserCsvImport: (e) => handleUserCsvImport(app, e),
-        handleAttendanceNoteSubmit: (e) => handleAttendanceNoteSubmit(app, e),
-        handleScheduleFormSubmit: (e, studentId) => handleScheduleFormSubmit(app, e, studentId),
+        
+        // Academics
         openCourseModal: (courseId = null, event) => openCourseModal(app, courseId, event),
         handleCourseFormSubmit: (e) => handleCourseFormSubmit(app, e),
         deleteCourse: (courseId, event) => deleteCourse(app, courseId, event),
-        handleGeneralSettingsSubmit: (e) => handleGeneralSettingsSubmit(app, e),
         handleAnnouncementSubmit: (e, courseId) => handleAnnouncementSubmit(app, e, courseId),
         openAssignmentModal: (assignmentId, courseId) => openAssignmentModal(app, assignmentId, courseId),
         handleAssignmentFormSubmit: (e) => handleAssignmentFormSubmit(app, e),
         deleteAssignment: (assignmentId) => deleteAssignment(app, assignmentId),
         updateGrade: (element, studentId, assignmentId, courseId, score, gradeId) => updateGrade(app, element, studentId, assignmentId, courseId, score, gradeId),
+        
+        // Attendance & Schedule
+        handleAttendanceNoteSubmit: (e) => handleAttendanceNoteSubmit(app, e),
         handleAttendanceSubmit: (courseId, date, attendanceId) => handleAttendanceSubmit(app, courseId, date, attendanceId),
+        handleScheduleFormSubmit: (e, studentId) => handleScheduleFormSubmit(app, e, studentId),
+        openPrintableScheduleModal: (studentId) => openPrintableScheduleModal(app, studentId),
+        
+        // Profile
+        handleProfileUpdate: (e) => handleProfileUpdate(app, e),
+        
+        // Homework
+        openHomeworkModal: (assignmentId) => openHomeworkModal(app, assignmentId),
+        handleHomeworkFileUpload: (e, assignmentId) => handleHomeworkFileUpload(app, e, assignmentId),
+        handleSubmissionGradeForm: (e, submissionId) => handleSubmissionGradeForm(app, e, submissionId),
+
+        // Settings
+        handleGeneralSettingsSubmit: (e) => handleGeneralSettingsSubmit(app, e),
+        handleBrandingSettingsSubmit: (e) => handleBrandingSettingsSubmit(app, e),
         openDayTypeModal: (dayTypeId = null) => openDayTypeModal(app, dayTypeId),
         handleDayTypeSubmit: (e) => handleDayTypeSubmit(app, e),
         deleteDayType: (id) => deleteDayType(app, id),
@@ -40,6 +64,8 @@ export function attachHandlersToWindow(app) {
         openLaunchpadLinkModal: (linkId = null) => openLaunchpadLinkModal(app, linkId),
         handleLaunchpadLinkSubmit: (e) => handleLaunchpadLinkSubmit(app, e),
         deleteLaunchpadLink: (id) => deleteLaunchpadLink(app, id),
+        
+        // Report Cards
         openGradingPeriodModal: (periodId=null) => openGradingPeriodModal(app, periodId),
         handleGradingPeriodSubmit: (e) => handleGradingPeriodSubmit(app, e),
         deleteGradingPeriod: (id) => deleteGradingPeriod(app, id),
@@ -47,14 +73,25 @@ export function attachHandlersToWindow(app) {
         deleteReportCard: (rcId) => deleteReportCard(app, rcId),
         generateReportCardsForPeriod: (periodId) => generateReportCardsForPeriod(app, periodId),
         openReportCardModal: (rcId) => openReportCardModal(app, rcId),
+        
+        // Reports & PDF
         generatePdfFromHtml: (elementId, pdfTitle) => generatePdfFromHtml(app, elementId, pdfTitle),
         openPaymentModal: () => openPaymentModal(app),
         openParentStatementModal: (parentId = null) => openParentStatementModal(app, parentId),
-        openPrintableScheduleModal: (studentId) => openPrintableScheduleModal(app, studentId),
-        handleProfileUpdate: (e) => handleProfileUpdate(app, e),
-        openHomeworkModal: (assignmentId) => openHomeworkModal(app, assignmentId),
-        handleHomeworkFileUpload: (e, assignmentId) => handleHomeworkFileUpload(app, e, assignmentId),
-        handleSubmissionGradeForm: (e, submissionId) => handleSubmissionGradeForm(app, e, submissionId),
+
+        // Version 2.0 Handlers
+        handleGenerateLessonPlan: (e) => handleGenerateLessonPlan(app, e),
+        handleGenerateQuizQuestions: (e) => handleGenerateQuizQuestions(app, e),
+        openQuizModal: (courseId, quizId = null) => openQuizModal(app, courseId, quizId),
+        handleQuizFormSubmit: (e, courseId, quizId) => handleQuizFormSubmit(app, e, courseId, quizId),
+        deleteQuiz: (quizId) => deleteQuiz(app, quizId),
+        handleQuizQuestionSubmit: (e, quizId) => handleQuizQuestionSubmit(app, e, quizId),
+        deleteQuizQuestion: (quizId, questionId) => deleteQuizQuestion(app, quizId, questionId),
+        addAiQuestionToQuiz: (quizId, questionIndex) => addAiQuestionToQuiz(app, quizId, questionIndex),
+        handleQuizSubmission: (e, quizId) => handleQuizSubmission(app, e, quizId),
+        handleGradeShortAnswer: (e, submissionId, questionId) => handleGradeShortAnswer(app, e, submissionId, questionId),
+        
+        // Generic
         closeModal: closeModal,
     };
     
@@ -122,6 +159,8 @@ export async function handleCreateSchoolSubmit(app, e) {
             name: data.schoolName, 
             theme: 'sky', 
             logoUrl: '', 
+            faviconUrl: '',
+            customCss: '',
             createdAt: serverTimestamp() 
         });
 
@@ -1089,6 +1128,308 @@ export async function handleSubmissionGradeForm(app, e, submissionId) {
         });
         showToast('Grade saved!', 'success');
     } catch (err) {
+        showToast(`Error saving grade: ${err.message}`, 'error');
+    }
+}
+
+
+// --- VERSION 2.0 HANDLERS ---
+
+// AI Assistant
+export async function handleGenerateLessonPlan(app, e) {
+    e.preventDefault();
+    if (!app.ai) {
+        showToast('AI features are not available. Please configure the API key.', 'error');
+        return;
+    }
+
+    const resultDiv = document.getElementById('ai-result');
+    const thinkingDiv = document.getElementById('ai-thinking-overlay');
+    const form = e.target;
+    const formData = new FormData(form);
+    const data = Object.fromEntries(formData.entries());
+
+    resultDiv.innerHTML = '';
+    thinkingDiv.classList.remove('hidden');
+
+    const prompt = `Create a detailed lesson plan for a ${data.gradeLevel} class on the topic of "${data.topic}". 
+    The key learning objectives are: ${data.objectives}.
+    Structure the lesson plan with the following sections:
+    1.  **Lesson Title**
+    2.  **Subject & Grade Level**
+    3.  **Learning Objectives** (reiterate and expand if necessary)
+    4.  **Materials & Resources** (list of required items)
+    5.  **Lesson Activities** (a step-by-step procedure, including introduction, direct instruction, guided practice, and independent practice)
+    6.  **Differentiation** (suggestions for supporting struggling students and challenging advanced students)
+    7.  **Assessment** (how to measure student understanding)
+    Format the output as clean HTML using headings (h3), paragraphs (p), and lists (ul, li). Do not include markdown.`;
+
+    try {
+        const response = await app.ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: prompt,
+        });
+        resultDiv.innerHTML = response.text;
+    } catch (error) {
+        console.error("Gemini API Error:", error);
+        resultDiv.innerHTML = `<p class="text-red-500">An error occurred while generating the lesson plan. Please check the console for details.</p>`;
+        showToast('AI generation failed.', 'error');
+    } finally {
+        thinkingDiv.classList.add('hidden');
+    }
+}
+
+export async function handleGenerateQuizQuestions(app, e) {
+    e.preventDefault();
+    if (!app.ai) { return; }
+
+    const resultDiv = document.getElementById('ai-result');
+    const thinkingDiv = document.getElementById('ai-thinking-overlay');
+    const form = e.target;
+    const formData = new FormData(form);
+    const data = Object.fromEntries(formData.entries());
+
+    resultDiv.innerHTML = '';
+    thinkingDiv.classList.remove('hidden');
+
+    const prompt = `Generate ${data.numQuestions} quiz questions about "${data.topic}".
+    Include a mix of question types as specified. For multiple choice questions, provide 4 options and clearly indicate the correct answer.`;
+
+    const questionSchema = {
+        type: Type.OBJECT,
+        properties: {
+            question: { type: Type.STRING },
+            type: { type: Type.STRING, enum: ['multiple_choice', 'short_answer'] },
+            options: { type: Type.ARRAY, items: { type: Type.STRING } },
+            answer: { type: Type.STRING },
+        },
+        required: ['question', 'type', 'answer']
+    };
+
+    try {
+        const response = await app.ai.models.generateContent({
+            model: "gemini-2.5-flash",
+            contents: prompt,
+            config: {
+                responseMimeType: "application/json",
+                responseSchema: {
+                    type: Type.ARRAY,
+                    items: questionSchema,
+                },
+            },
+        });
+        
+        const questions = JSON.parse(response.text);
+        window.generatedQuestions = questions; // Store globally for adding to quiz
+
+        const courseOptions = app.state.courses.filter(c => app.canEdit(c)).map(c => {
+             const quizzes = app.state.quizzes.filter(q => q.courseId === c.id);
+             return `<optgroup label="${c.name}">
+                ${quizzes.map(q => `<option value="${q.id}">${q.title}</option>`).join('')}
+             </optgroup>`;
+        }).join('');
+
+        resultDiv.innerHTML = questions.map((q, index) => `
+            <div class="p-4 bg-slate-50 rounded-lg mb-3">
+                <p class="font-semibold">${index + 1}. ${q.question}</p>
+                ${q.type === 'multiple_choice' ? `<ul class="list-disc pl-6 mt-2">${q.options.map(opt => `<li>${opt} ${opt === q.answer ? '<span class="text-green-600 font-bold">(Correct)</span>' : ''}</li>`).join('')}</ul>` : `<p class="text-sm text-slate-500 mt-1"><em>Answer: ${q.answer}</em></p>`}
+                <div class="mt-2 text-right">
+                    <select id="quiz-select-${index}" class="p-1 border rounded-md text-sm"><option value="">Add to quiz...</option>${courseOptions}</select>
+                    <button onclick="window.addAiQuestionToQuiz(document.getElementById('quiz-select-${index}').value, ${index})" class="bg-blue-500 text-white text-xs font-bold py-1 px-2 rounded hover:bg-blue-600">ADD</button>
+                </div>
+            </div>`).join('');
+    } catch (error) {
+        console.error("Gemini API Error:", error);
+        resultDiv.innerHTML = `<p class="text-red-500">An error occurred. The AI may have returned an unexpected format. Please try again.</p>`;
+        showToast('AI generation failed.', 'error');
+    } finally {
+        thinkingDiv.classList.add('hidden');
+    }
+}
+
+// Quiz Management
+export function openQuizModal(app, courseId, quizId = null) {
+    const quiz = quizId ? app.state.quizzes.find(q => q.id === quizId) : null;
+    const title = quiz ? 'Edit Quiz' : 'Create New Quiz';
+    const body = `<form id="quiz-form">
+        <label class="block font-semibold mb-1">Quiz Title</label>
+        <input type="text" name="title" value="${quiz?.title || ''}" class="w-full p-2 border rounded-lg mb-4" required>
+        <label class="block font-semibold mb-1">Due Date</label>
+        <input type="date" name="dueDate" value="${quiz?.dueDate || ''}" class="w-full p-2 border rounded-lg mb-4">
+        <button type="submit" class="w-full bg-green-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-green-700 mt-6">Save Quiz</button>
+    </form>`;
+    openModal(title, body);
+    document.getElementById('quiz-form').addEventListener('submit', (e) => handleQuizFormSubmit(app, e, courseId, quizId));
+}
+
+export async function handleQuizFormSubmit(app, e, courseId, quizId) {
+    e.preventDefault();
+    const { db } = app;
+    const formData = new FormData(e.target);
+    const data = {
+        title: formData.get('title'),
+        dueDate: formData.get('dueDate'),
+        courseId: courseId,
+        questions: quizId ? app.state.quizzes.find(q=>q.id===quizId).questions || [] : [],
+    };
+
+    try {
+        if (quizId) {
+            await updateDoc(doc(db, 'schools', app.state.school.id, 'quizzes', quizId), data);
+            showToast('Quiz updated!', 'success');
+        } else {
+            await addDoc(collection(db, 'schools', app.state.school.id, 'quizzes'), data);
+            showToast('Quiz created!', 'success');
+        }
+        closeModal();
+    } catch (err) {
+        showToast(`Error saving quiz: ${err.message}`, 'error');
+    }
+}
+
+export async function deleteQuiz(app, quizId) {
+    if (confirm('Are you sure you want to delete this quiz and all its submissions?')) {
+        try {
+            await deleteDoc(doc(app.db, 'schools', app.state.school.id, 'quizzes', quizId));
+            showToast('Quiz deleted.', 'success');
+        } catch (err) { showToast(`Error: ${err.message}`, 'error'); }
+    }
+}
+
+export async function handleQuizQuestionSubmit(app, e, quizId) {
+    e.preventDefault();
+    const quiz = app.state.quizzes.find(q => q.id === quizId);
+    if (!quiz) return;
+
+    const formData = new FormData(e.target);
+    const questionType = formData.get('type');
+    let questionData;
+
+    if (questionType === 'multiple_choice') {
+        questionData = {
+            id: Date.now().toString(),
+            type: 'multiple_choice',
+            question: formData.get('question'),
+            options: [formData.get('option1'), formData.get('option2'), formData.get('option3'), formData.get('option4')].filter(Boolean),
+            answer: formData.get('answer'),
+        };
+    } else {
+        questionData = {
+            id: Date.now().toString(),
+            type: 'short_answer',
+            question: formData.get('question'),
+            answer: formData.get('answer') // Optional correct answer for reference
+        };
+    }
+    
+    const updatedQuestions = [...(quiz.questions || []), questionData];
+    try {
+        await updateDoc(doc(app.db, 'schools', app.state.school.id, 'quizzes', quizId), { questions: updatedQuestions });
+        e.target.reset();
+    } catch (err) { showToast(`Error saving question: ${err.message}`, 'error'); }
+}
+
+export async function deleteQuizQuestion(app, quizId, questionId) {
+     const quiz = app.state.quizzes.find(q => q.id === quizId);
+    if (!quiz) return;
+    const updatedQuestions = quiz.questions.filter(q => q.id !== questionId);
+     try {
+        await updateDoc(doc(app.db, 'schools', app.state.school.id, 'quizzes', quizId), { questions: updatedQuestions });
+    } catch (err) { showToast(`Error deleting question: ${err.message}`, 'error'); }
+}
+
+export async function addAiQuestionToQuiz(app, quizId, questionIndex) {
+    if (!quizId) {
+        showToast('Please select a quiz to add this question to.', 'error');
+        return;
+    }
+    const question = window.generatedQuestions[questionIndex];
+    const quiz = app.state.quizzes.find(q => q.id === quizId);
+    if (!question || !quiz) {
+        showToast('Could not find quiz or question data.', 'error');
+        return;
+    }
+    
+    const newQuestion = { id: Date.now().toString(), ...question };
+    const updatedQuestions = [...(quiz.questions || []), newQuestion];
+     try {
+        await updateDoc(doc(app.db, 'schools', app.state.school.id, 'quizzes', quizId), { questions: updatedQuestions });
+        showToast(`Question added to "${quiz.title}"!`, 'success');
+    } catch (err) { showToast(`Error adding question: ${err.message}`, 'error'); }
+}
+
+// Quiz Taking and Grading
+export async function handleQuizSubmission(app, e, quizId) {
+    e.preventDefault();
+    const { state, db } = app;
+    const quiz = state.quizzes.find(q => q.id === quizId);
+    if (!quiz) return;
+
+    const formData = new FormData(e.target);
+    const answers = {};
+    let score = 0;
+    let maxScore = 0;
+
+    quiz.questions.forEach(q => {
+        const answer = formData.get(q.id);
+        answers[q.id] = answer;
+        if (q.type === 'multiple_choice') {
+            maxScore += 1;
+            if (answer === q.answer) {
+                score += 1;
+            }
+        }
+    });
+
+    const submissionData = {
+        quizId,
+        courseId: quiz.courseId,
+        studentId: state.user.id,
+        submittedAt: serverTimestamp(),
+        answers,
+        autoScore: score,
+        manualScore: 0,
+        maxScore,
+        totalScore: score,
+        isGraded: quiz.questions.every(q => q.type === 'multiple_choice'),
+    };
+    
+    try {
+        await addDoc(collection(db, 'schools', state.school.id, 'quizSubmissions'), submissionData);
+        showToast('Quiz submitted successfully!', 'success');
+        window.location.hash = `#/courses/${quiz.courseId}?tab=quizzes`;
+    } catch(err) {
+        showToast(`Error submitting quiz: ${err.message}`, 'error');
+    }
+}
+
+export async function handleGradeShortAnswer(app, e, submissionId, questionId) {
+    e.preventDefault();
+    const submission = app.state.quizSubmissions.find(s => s.id === submissionId);
+    if (!submission) return;
+
+    const points = Number(e.target.elements.points.value);
+    const updatedAnswers = { ...submission.answers, [`${questionId}_grade`]: points };
+    
+    // Recalculate total score
+    const quiz = app.state.quizzes.find(q => q.id === submission.quizId);
+    let manualScore = 0;
+    quiz.questions.forEach(q => {
+        if (q.type === 'short_answer') {
+            manualScore += updatedAnswers[`${q.id}_grade`] || 0;
+        }
+    });
+    const totalScore = (submission.autoScore || 0) + manualScore;
+
+    try {
+        await updateDoc(doc(app.db, 'schools', app.state.school.id, 'quizSubmissions', submissionId), {
+            answers: updatedAnswers,
+            manualScore,
+            totalScore,
+            isGraded: true, // Assuming grading one means the whole thing is graded
+        });
+        showToast('Grade saved!', 'success');
+    } catch(err) {
         showToast(`Error saving grade: ${err.message}`, 'error');
     }
 }
