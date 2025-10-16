@@ -5,13 +5,11 @@ import * as V from './views.js';
 import * as C from './constants.js';
 import { attachHandlersToWindow } from './handlers.js';
 import { applyTheme, showToast } from './utils.js';
-import { GoogleGenAI } from "https://esm.run/@google/genai";
 
 export class SchoolApp {
     auth;
     db;
     storage;
-    ai;
     
     state = {
         user: null, school: null, allUsers: [], users: [], students: [], teachers: [], courses: [],
@@ -20,8 +18,6 @@ export class SchoolApp {
         tuitionItems: [], launchpadLinks: [], gradingPeriods: [], reportCardTemplates: [], generatedReportCards: [],
         homeworkSubmissions: [],
         incidents: [], lunchMenu: [], eventCategories: [],
-        // Version 2.0 State
-        quizzes: [], quizSubmissions: [], messages: [],
         unsubscribeListeners: [], currentCalendar: null,
     };
 
@@ -31,21 +27,6 @@ export class SchoolApp {
         this.auth = getAuth(firebaseApp);
         this.db = getFirestore(firebaseApp);
         this.storage = getStorage(firebaseApp);
-        
-        // Initialize Gemini AI
-        const apiKey = C.GEMINI_API_KEY;
-        if (apiKey && apiKey !== "YOUR_API_KEY_HERE") {
-            try {
-                 this.ai = new GoogleGenAI({ apiKey });
-            } catch (error) {
-                console.error("Could not initialize GoogleGenAI. Please check your API key.", error);
-                this.ai = null;
-            }
-        } else {
-            console.warn("Gemini API key is not configured. AI features will be disabled.");
-            this.ai = null;
-        }
-
         this.routes = {
             'myday': { render: (ids, params) => V.renderMyDay(this) }, 
             'dashboard': { render: (ids, params) => V.renderParentDashboard(this) },
@@ -64,10 +45,6 @@ export class SchoolApp {
             'report-cards': { render: (ids, params) => V.renderReportCards(this, ids, params) },
             'behavior': { render: (ids, params) => V.renderBehaviorLog(this) },
             'lunch': { render: (ids, params) => V.renderLunchMenu(this) },
-            // Version 2.0 Routes
-            'ai-assistant': { render: (ids, params) => V.renderAiAssistant(this, params) },
-            'directory': { render: (ids, params) => V.renderDirectory(this) },
-            'messages': { render: (ids, params) => V.renderMessages(this, ids) },
         };
     }
 
@@ -88,172 +65,166 @@ export class SchoolApp {
         if (user) {
             document.getElementById('router-outlet').innerHTML = C.templates.authView;
             try {
-                await this.findUserSchool(user);
+                await this.findAndSetSchoolData(user);
             } catch (error) {
-                console.error("Error during authentication process:", error);
-                this.handleAuthError();
+                console.error("Error setting school data:", error);
+                if (error.message === 'User not found in any school.') {
+                    V.renderSignupView(this);
+                } else {
+                    showToast(error.message, 'error');
+                }
             }
         } else {
-            this.state.user = null;
-            this.state.school = null;
-            this.clearListeners();
-            if (!window.location.hash.startsWith('#/login') && !window.location.hash.startsWith('#/signup') && !window.location.hash.startsWith('#/create-school')) {
-                window.location.hash = '#/login';
-            } else {
-                this.router();
-            }
+            this.resetState();
+            this.router();
         }
     }
 
-    async findUserSchool(user) {
-        const q = query(collectionGroup(this.db, 'users'), where('uid', '==', user.uid));
-        const userDocs = await getDocs(q);
-        if (userDocs.empty) { // User exists in Auth, but not in any school's user subcollection
-            this.handleNoSchoolFound(user);
+    async findAndSetSchoolData(user) {
+        const schoolsRef = collection(this.db, 'schools');
+        const schoolSnapshot = await getDocs(schoolsRef);
+        let foundSchool = null;
+        let foundUserDoc = null;
+
+        for (const schoolDoc of schoolSnapshot.docs) {
+            const userRef = doc(this.db, 'schools', schoolDoc.id, 'users', user.uid);
+            const userDoc = await getDoc(userRef);
+            if (userDoc.exists()) {
+                foundSchool = { id: schoolDoc.id, ...schoolDoc.data() };
+                foundUserDoc = userDoc;
+                break;
+            }
+        }
+
+        if (foundSchool && foundUserDoc) {
+            this.state.school = foundSchool;
+            this.state.user = { id: foundUserDoc.id, ...foundUserDoc.data() };
+            document.getElementById('router-outlet').innerHTML = C.templates.appView;
+            V.renderAppShell(this);
+            applyTheme(this.state.school.theme);
+            await this.attachDataListeners();
+            if (!window.location.hash || ['#/login', '#/signup', '#/create-school', '#/'].includes(window.location.hash)) {
+                window.location.hash = this.state.user.role === 'parent' ? '#/dashboard' : '#/myday';
+            }
+            this.router();
         } else {
-            const userDoc = userDocs.docs[0];
-            const schoolRef = userDoc.ref.parent.parent;
-            const schoolDoc = await getDoc(schoolRef);
-            this.state.school = { id: schoolDoc.id, ...schoolDoc.data() };
-            this.state.user = { id: userDoc.id, ...userDoc.data() };
-            this.onSchoolFound();
-        }
-    }
-    
-    handleNoSchoolFound(user) {
-        const emailQuery = query(collectionGroup(this.db, 'users'), where('email', '==', user.email), where('isPlaceholder', '==', true));
-        getDocs(emailQuery).then(placeholderDocs => {
-            if (!placeholderDocs.empty) {
-                // Found a placeholder invitation. Link account.
-                const userDocRef = placeholderDocs.docs[0].ref;
-                runTransaction(this.db, async (transaction) => {
-                    transaction.update(userDocRef, { uid: user.uid, isPlaceholder: false });
-                }).then(() => this.findUserSchool(user)); // Re-run the process
+            const potentialUserQuery = query(collectionGroup(this.db, 'users'), where('email', '==', user.email), where('isPlaceholder', '==', true));
+            const potentialDocs = await getDocs(potentialUserQuery);
+            if (!potentialDocs.empty) {
+                const placeholderDoc = potentialDocs.docs[0];
+                const schoolId = placeholderDoc.ref.parent.parent.id;
+                await runTransaction(this.db, async (transaction) => {
+                    transaction.delete(placeholderDoc.ref);
+                    const newUserRef = doc(this.db, 'schools', schoolId, 'users', user.uid);
+                    transaction.set(newUserRef, { ...placeholderDoc.data(), uid: user.uid, isPlaceholder: false });
+                });
+                await this.findAndSetSchoolData(user);
             } else {
-                // No school and no invitation. Prompt to create a school.
-                window.location.hash = '#/create-school';
-                this.router();
+                 throw new Error('User not found in any school.');
             }
-        });
-    }
-
-    onSchoolFound() {
-        applyTheme(this.state.school.theme);
-        const favicon = document.getElementById('favicon');
-        if (this.state.school.faviconUrl) favicon.href = this.state.school.faviconUrl;
-
-        document.getElementById('router-outlet').innerHTML = C.templates.appView;
-        this.setupDataListeners();
-        this.router();
-    }
-
-    handleAuthError() {
-        signOut(this.auth);
-        showToast("An error occurred. Please log in again.", 'error');
-        window.location.hash = '#/login';
-        this.router();
-    }
-    
-    clearListeners() {
-        this.state.unsubscribeListeners.forEach(unsub => unsub());
-        this.state.unsubscribeListeners = [];
-    }
-
-    setupDataListeners() {
-        this.clearListeners();
-        const schoolId = this.state.school.id;
-        const collectionsToListen = [
-            'allUsers:users', 'courses', 'dayTypes', 'timeBlocks', 'masterCalendar', 'schedules',
-            'assignments', 'grades', 'attendance', 'attendanceNotes', 'events', 'announcements',
-            'tuitionItems', 'launchpadLinks', 'gradingPeriods', 'reportCardTemplates',
-            'generatedReportCards', 'homeworkSubmissions', 'incidents', 'lunchMenu', 'eventCategories',
-            'quizzes', 'quizSubmissions',
-        ];
-
-        collectionsToListen.forEach(name => {
-            const [stateKey, collectionName] = name.includes(':') ? name.split(':') : [name, name];
-            const q = collection(this.db, 'schools', schoolId, collectionName);
-            const unsub = onSnapshot(q, (snapshot) => {
-                this.state[stateKey] = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                this.onDataUpdate(stateKey);
-            }, (error) => console.error(`Error listening to ${collectionName}:`, error));
-            this.state.unsubscribeListeners.push(unsub);
-        });
-
-        // Special listener for messages (involves current user)
-        const messagesQuery = query(collection(this.db, 'schools', schoolId, 'messages'), where('participantIds', 'array-contains', this.state.user.id), orderBy('lastUpdatedAt', 'desc'));
-        const unsubMessages = onSnapshot(messagesQuery, (snapshot) => {
-            this.state.messages = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-            this.onDataUpdate('messages');
-        }, (error) => console.error(`Error listening to messages:`, error));
-        this.state.unsubscribeListeners.push(unsubMessages);
-    }
-    
-    onDataUpdate(collectionName) {
-        if (collectionName === 'allUsers') {
-            this.state.users = this.state.allUsers.filter(u => !u.isPlaceholder);
-            this.state.students = this.state.users.filter(u => u.role === 'student');
-            this.state.teachers = this.state.users.filter(u => u.role === 'teacher');
         }
-        this.router();
     }
 
-    // ROUTER
+    attachDataListeners() {
+        this.unsubscribeListeners.forEach(unsub => unsub());
+        this.unsubscribeListeners = [];
+        this.listenForData('users', null, 'allUsers');
+        this.listenForData('courses');
+        this.listenForData('dayTypes');
+        this.listenForData('timeBlocks');
+        this.listenForData('masterCalendar');
+        this.listenForData('schedules');
+        this.listenForData('assignments', orderBy('dueDate', 'desc'));
+        this.listenForData('grades');
+        this.listenForData('attendance');
+        this.listenForData('attendanceNotes');
+        this.listenForData('announcements', orderBy('createdAt', 'desc'));
+        this.listenForData('events');
+        this.listenForData('tuitionItems');
+        this.listenForData('launchpadLinks');
+        this.listenForData('gradingPeriods');
+        this.listenForData('reportCardTemplates');
+        this.listenForData('generatedReportCards');
+        this.listenForData('homeworkSubmissions');
+        this.listenForData('incidents', orderBy('date', 'desc'));
+        this.listenForData('lunchMenu');
+    }
+
+    listenForData(collectionName, qConstraints, stateKey = collectionName) {
+        let collQuery = collection(this.db, 'schools', this.state.school.id, collectionName);
+        if (qConstraints) {
+            collQuery = query(collQuery, qConstraints);
+        }
+        const unsubscribe = onSnapshot(collQuery, (snapshot) => {
+            this.state[stateKey] = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            if(stateKey === 'allUsers') {
+                this.state.students = this.state.allUsers.filter(u => u.role === 'student');
+                this.state.teachers = this.state.allUsers.filter(u => u.role === 'teacher');
+            }
+            this.router(); // Re-render the current view with new data
+        }, (error) => {
+            console.error(`Error listening to ${collectionName}:`, error);
+            showToast(`Could not load ${collectionName}.`, 'error');
+        });
+        this.unsubscribeListeners.push(unsubscribe);
+    }
+    
+    resetState() {
+        this.unsubscribeListeners.forEach(unsub => unsub());
+        this.state = { 
+            user: null, school: null, allUsers: [], users: [], students: [], teachers: [], courses: [],
+            dayTypes: [], timeBlocks: [], masterCalendar: [], schedules: [],
+            assignments: [], grades: [], attendance: [], attendanceNotes: [], events: [], announcements: [],
+            tuitionItems: [], launchpadLinks: [], gradingPeriods: [], reportCardTemplates: [], generatedReportCards: [],
+            homeworkSubmissions: [],
+            incidents: [], lunchMenu: [], eventCategories: [],
+            unsubscribeListeners: [], currentCalendar: null,
+        };
+    }
+    
     getRoute() {
-        const hash = window.location.hash.substring(2) || 'myday';
-        const [path, query] = hash.split('?');
-        const pathParts = path.split('/').filter(p => p);
-        const page = pathParts[0] || 'myday';
-        const ids = pathParts.slice(1);
-        const params = new URLSearchParams(query);
+        const hash = window.location.hash.slice(2) || 'login';
+        const [page, ...ids] = hash.split('/');
+        const params = new URLSearchParams(window.location.hash.split('?')[1]);
         return [page, ids, params];
     }
     
     router() {
         const [page, ids, params] = this.getRoute();
-        const route = this.routes[page];
-        
-        if (page === 'login' || page === 'signup' || page === 'create-school') {
-            document.getElementById('router-outlet').innerHTML = C.templates.authView;
-            if (page === 'login') V.renderLoginView(this);
+        const outlet = document.getElementById('router-outlet');
+        if (!outlet) return;
+
+        if (!this.state.user) {
+            outlet.innerHTML = C.templates.authView;
             if (page === 'signup') V.renderSignupView(this);
-            if (page === 'create-school') V.renderCreateSchoolView(this);
+            else if (page === 'create-school') V.renderCreateSchoolView(this);
+            else V.renderLoginView(this);
             return;
         }
-
-        if (!this.state.user) return; // Wait for user data
-
-        if (document.getElementById('main-content')) {
-            V.renderAppShell(this);
-            if (route) {
-                try {
-                    route.render(ids, params);
-                } catch (error) {
-                    console.error(`Error rendering page ${page}:`, error);
-                    document.getElementById('content').innerHTML = `<p class="text-red-500">Error rendering this page.</p>`;
-                }
-            } else {
-                V.renderMyDay(this); // Fallback to a default page
+        
+        const route = this.routes[page];
+        if (route) {
+            V.populateNav(this);
+            try {
+                route.render(ids, params);
+            } catch (error) {
+                 console.error(`Error rendering page ${page}:`, error);
+                 document.getElementById('content').innerHTML = `<p class="text-red-500">Error loading this page.</p>`;
             }
+        } else {
+            window.location.hash = '#/myday';
         }
     }
     
-    // UTILITY/HELPER METHODS
+    // --- HELPERS ---
     getEnrolledStudentIds(courseId) {
-        const studentIds = new Set();
-        this.state.schedules.forEach(scheduleDoc => {
-            Object.values(scheduleDoc.schedule).forEach(cId => {
-                if (cId === courseId) {
-                    studentIds.add(scheduleDoc.studentId);
-                }
-            });
-        });
-        return Array.from(studentIds);
+        const courseSchedules = this.state.schedules.filter(s => Object.values(s.schedule).includes(courseId));
+        return courseSchedules.map(s => s.studentId);
     }
 
     canEdit(item) {
         const user = this.state.user;
-        if (!user) return false;
+        if (!user || !item) return false;
         if (user.role === 'admin') return true;
         if (user.role === 'teacher' && item.teacherId === user.id) return true;
         return false;

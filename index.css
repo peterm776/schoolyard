@@ -41,7 +41,7 @@ body { font-family: 'Inter', sans-serif; background-color: #f8fafc; }
 .fc .fc-toolbar-title { font-size: 1.5em; font-weight: bold; color: #1e293b; }
 .fc .fc-daygrid-day-number { font-weight: 500; }
 .gradebook-table th, .gradebook-table td { white-space: nowrap; text-align: center; }
-.settings-tab.active, .course-tab.active, .report-tab.active, .ai-tab.active { 
+.settings-tab.active, .course-tab.active, .report-tab.active { 
     border-color: var(--primary-500); 
     color: var(--primary-500); 
     background-color: rgb(var(--primary-100));
@@ -245,108 +245,69 @@ body { font-family: 'Inter', sans-serif; background-color: #f8fafc; }
 
 /* Behavior Log Styles */
 .incident-card {
+    display: flex;
+    gap: 1rem;
+    padding: 1rem;
+    border-radius: 0.5rem;
     border-left-width: 4px;
-    border-radius: 0.25rem;
+    background-color: white;
+    box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
 }
-.incident-card.positive { border-color: #22c55e; }
-.incident-card.negative { border-color: #ef4444; }
-.incident-card.neutral { border-color: #f59e0b; }
+.incident-card.positive { border-color: #22c55e; } /* green-500 */
+.incident-card.negative { border-color: #ef4444; } /* red-500 */
+.incident-card.neutral { border-color: #64748b; } /* slate-500 */
+
+.incident-icon {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.5rem;
+    height: 2.5rem;
+    border-radius: 9999px;
+    color: white;
+}
+.incident-card.positive .incident-icon { background-color: #22c55e; }
+.incident-card.negative .incident-icon { background-color: #ef4444; }
+.incident-card.neutral .incident-icon { background-color: #64748b; }
 
 /* Lunch Menu Styles */
 .lunch-menu-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-    gap: 1rem;
+    grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+    gap: 1.5rem;
 }
-.lunch-menu-day {
+.menu-day-card {
     background-color: #f8fafc;
     border: 1px solid #e2e8f0;
     border-radius: 0.5rem;
-    padding: 1rem;
-}
-.lunch-menu-day h4 {
-    color: var(--primary-700);
-}
-
-/* Version 2.0 Styles */
-.sidebar-heading {
-    font-size: 0.75rem;
-    font-weight: 700;
-    color: #94a3b8;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    padding: 0.5rem 0.75rem;
-    margin-top: 1.5rem;
-}
-.sidebar-heading:first-of-type {
-    margin-top: 0;
-}
-
-.ai-thinking-overlay {
-    position: absolute;
-    inset: 0;
-    background-color: rgba(255, 255, 255, 0.8);
+    padding: 1.25rem;
     display: flex;
     flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    border-radius: 0.5rem;
-    z-index: 10;
 }
-.ai-thinking-overlay .loader {
-    border-top-color: var(--primary-600);
-}
-.ai-thinking-overlay p {
-    margin-top: 1rem;
-    font-weight: 600;
+.menu-day-card h4 {
+    font-size: 1.25rem;
+    font-weight: 700;
     color: var(--primary-700);
+    margin-bottom: 0.75rem;
+}
+.menu-day-card ul {
+    list-style-position: inside;
+    list-style-type: disc;
+    padding-left: 0.5rem;
+    color: #475569;
+    flex-grow: 1;
 }
 
-.directory-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-    gap: 1rem;
-}
-.directory-card {
-    display: flex;
-    align-items: center;
-    gap: 1rem;
+/* Attendance Note Management */
+.attendance-note-card {
+    background-color: #fffbeb; /* amber-50 */
+    border-left: 4px solid #f59e0b; /* amber-500 */
     padding: 1rem;
-    background-color: #f8fafc;
-    border: 1px solid #e2e8f0;
-    border-radius: 0.5rem;
+    border-radius: 0.375rem;
+    box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
 }
-.directory-avatar {
-    width: 3.5rem;
-    height: 3.5rem;
-    border-radius: 9999px;
-    background-color: var(--primary-100);
-    color: var(--primary-600);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-weight: bold;
-    font-size: 1.5rem;
-    flex-shrink: 0;
-}
-.quiz-option-label {
-    display: flex;
-    align-items: center;
-    padding: 0.75rem;
-    border: 1px solid #e2e8f0;
-    border-radius: 0.5rem;
-    cursor: pointer;
-    transition: all 0.2s;
-}
-.quiz-option-label:hover {
-    background-color: #f8fafc;
-    border-color: var(--primary-500);
-}
-.quiz-option-input:checked + .quiz-option-label {
-    background-color: rgb(var(--primary-100));
-    border-color: var(--primary-600);
-    font-weight: 600;
-}
-.quiz-option-input {
-    display: none;
+.attendance-note-card.approved {
+    background-color: #f0fdf4; /* green-50 */
+    border-left-color: #22c55e; /* green-500 */
 }

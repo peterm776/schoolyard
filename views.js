@@ -199,9 +199,33 @@ export function renderParentDashboard(app) {
 
      const studentOptions = children.map(c => `<option value="${c.id}">${c.displayName}</option>`).join('');
 
+     const childrenIds = state.user.childrenIds || [];
+     const recentIncidents = state.incidents.filter(i => childrenIds.includes(i.studentId)).slice(0, 3);
+     
+     let incidentsHtml = `<div class="bg-slate-50 p-6 rounded-lg shadow-sm mt-8">
+        <h4 class="text-xl font-bold text-slate-700 mb-4">Recent Behavior Log</h4>`;
+     if (recentIncidents.length > 0) {
+        incidentsHtml += `<div class="space-y-3">
+            ${recentIncidents.map(incident => {
+                const student = state.students.find(s => s.id === incident.studentId);
+                const typeClass = incident.type || 'neutral';
+                return `<div class="incident-card ${typeClass}">
+                    <div>
+                        <p class="font-bold">${student?.displayName}</p>
+                        <p class="text-sm text-slate-500">${incident.date} &bull; Reported by ${incident.reporterName}</p>
+                        <p class="mt-1 text-slate-700">${incident.description}</p>
+                    </div>
+                </div>`;
+            }).join('')}
+        </div>
+        <a href="#/behavior" class="block text-center mt-4 font-semibold text-primary-600 hover:underline">View Full Log &rarr;</a>`;
+     } else {
+        incidentsHtml += `<p class="text-slate-500">No recent incidents have been logged.</p>`;
+     }
+     incidentsHtml += `</div>`;
+
      content.innerHTML = `
          <div class="max-w-2xl mx-auto">
-             <h3 class="text-2xl font-bold text-slate-700 mb-6">Parent Dashboard</h3>
              <div class="bg-slate-50 p-6 rounded-lg shadow-sm">
                  <h4 class="text-xl font-bold text-slate-700 mb-4">Submit Attendance Note</h4>
                  <form id="attendance-note-form">
@@ -232,6 +256,7 @@ export function renderParentDashboard(app) {
                      </div>
                  </form>
              </div>
+             ${incidentsHtml}
          </div>
        `;
      document.getElementById('attendance-note-form').addEventListener('submit', (e) => window.handleAttendanceNoteSubmit(e));
@@ -415,21 +440,30 @@ export function renderAttendance(app) {
     const content = document.getElementById('content');
     if(!content) return;
     const { state } = app;
+
     if (state.user.role === 'admin' || state.user.role === 'teacher') {
         const notes = [...state.attendanceNotes].sort((a,b) => b.date.localeCompare(a.date));
-        let notesHtml = `<div class="mb-8"><h3 class="text-xl font-bold text-slate-700 mb-4">Parent Submissions</h3>`;
+        let notesHtml = `<div class="mb-8"><h3 class="text-xl font-bold text-slate-700 mb-4">Parent Absence/Tardy Submissions</h3>`;
         if(notes.length > 0) {
               notesHtml += `<div class="space-y-3">${notes.map(note => {
                   const student = state.students.find(s => s.id === note.studentId);
-                  return `<div class="p-4 rounded-lg bg-yellow-50 border border-yellow-200">
+                  const parent = state.allUsers.find(u => u.id === note.parentId);
+                  const statusClass = note.status === 'approved' ? 'approved' : '';
+                  const statusText = note.status ? note.status.charAt(0).toUpperCase() + note.status.slice(1) : 'Submitted';
+                  
+                  return `<div class="attendance-note-card ${statusClass}">
                       <div class="flex justify-between items-start">
                           <div>
                               <p class="font-bold text-slate-800">${student?.displayName || 'Unknown Student'}</p>
                               <p class="text-sm"><span class="font-semibold capitalize">${note.type}</span> on <span class="font-semibold">${note.date}</span></p>
+                              <p class="text-xs text-slate-500">Submitted by ${parent?.displayName} on ${note.submittedAt?.toDate().toLocaleDateString()}</p>
                           </div>
-                          <p class="text-xs text-slate-500">${note.submittedAt?.toDate().toLocaleDateString()}</p>
+                          <div class="text-right">
+                              <span class="text-xs font-bold uppercase px-2 py-1 rounded-full ${note.status === 'approved' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}">${statusText}</span>
+                              ${note.status !== 'approved' ? `<button onclick="window.updateAttendanceNoteStatus('${note.id}', 'approved')" class="text-xs ml-2 bg-green-500 text-white font-bold py-1 px-2 rounded hover:bg-green-600">Approve</button>` : ''}
+                          </div>
                       </div>
-                      ${note.reason ? `<p class="text-slate-700 mt-2 p-2 bg-yellow-100 rounded">${note.reason}</p>` : ''}
+                      ${note.reason ? `<p class="text-slate-700 mt-2 p-2 bg-white rounded">${note.reason}</p>` : ''}
                   </div>`
               }).join('')}</div>`;
         } else {
@@ -438,7 +472,7 @@ export function renderAttendance(app) {
         notesHtml += `</div>`;
 
         const myCourses = state.courses.filter(c => c.teacherId === state.user.id || state.user.role === 'admin');
-        if (myCourses.length === 0) {
+        if (myCourses.length === 0 && state.user.role === 'teacher') {
               content.innerHTML = notesHtml + `<p class="text-slate-500">You are not assigned to teach any courses.</p>`;
               return;
         }
@@ -752,7 +786,7 @@ export function renderSettings(app, idParts, params) {
     const tabs = [
         { id: 'general', name: 'General' }, { id: 'academics', name: 'Academics' },
         { id: 'master_calendar', name: 'Master Calendar' }, { id: 'tuition', name: 'Tuition Items' },
-        { id: 'launchpad', name: 'Launchpad' }
+        { id: 'launchpad', name: 'Launchpad' }, { id: 'lunch_menu', name: 'Lunch Menu' }
     ];
     content.innerHTML = `
         <div class="flex border-b mb-6 overflow-x-auto">
@@ -763,7 +797,7 @@ export function renderSettings(app, idParts, params) {
     const tabRenderers = {
         'general': renderSettingsGeneral, 'academics': renderSettingsAcademics,
         'master_calendar': renderSettingsMasterCalendar, 'tuition': renderSettingsTuition,
-        'launchpad': renderSettingsLaunchpad
+        'launchpad': renderSettingsLaunchpad, 'lunch_menu': renderSettingsLunchMenu
     };
     (tabRenderers[currentTab] || tabRenderers.general)(app);
 }
@@ -831,6 +865,51 @@ function renderSettingsLaunchpad(app) {
     if(!content) return;
     const links = state.launchpadLinks.map(link => `<tr><td class="py-2 px-4 border-b">${link.name}</td><td class="py-2 px-4 border-b"><a href="${link.url}" target="_blank" class="text-blue-600 hover:underline">${link.url}</a></td><td class="py-2 px-4 border-b text-right"><button onclick="window.openLaunchpadLinkModal('${link.id}')" class="text-yellow-600 font-semibold text-sm">EDIT</button><button onclick="window.deleteLaunchpadLink('${link.id}')" class="ml-2 text-red-600 font-semibold text-sm">DELETE</button></td></tr>`).join('');
     content.innerHTML = `<div class="flex justify-between items-center mb-4"><h3 class="text-2xl font-bold">Launchpad Links</h3><button onclick="window.openLaunchpadLinkModal()" class="bg-primary-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-primary-600">Add Link</button></div><table class="min-w-full bg-white"><thead><tr class="bg-slate-100"><th class="text-left py-2 px-4">Name</th><th class="text-left py-2 px-4">URL</th><th class="text-right py-2 px-4">Actions</th></tr></thead><tbody>${links}</tbody></table>`;
+}
+
+function renderSettingsLunchMenu(app) {
+    const { state } = app;
+    const content = document.getElementById('settings-content');
+    if (!content) return;
+
+    const today = new Date();
+    const dayOfWeek = today.getDay(); // Sunday - 0, Monday - 1, etc.
+    const monday = new Date(today);
+    monday.setDate(today.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1)); // Adjust for Sunday
+
+    const weekDates = [];
+    for (let i = 0; i < 5; i++) {
+        const day = new Date(monday);
+        day.setDate(monday.getDate() + i);
+        weekDates.push(day.toISOString().split('T')[0]);
+    }
+
+    const dayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
+
+    const formFields = weekDates.map((date, index) => {
+        const menu = state.lunchMenu.find(m => m.id === date);
+        const menuText = menu ? menu.items.join('\n') : '';
+        return `<div class="bg-slate-50 p-4 rounded-lg">
+            <label class="font-bold text-lg text-slate-700">${dayNames[index]} (${date})</label>
+            <textarea name="menu_${date}" rows="5" class="w-full p-2 mt-2 border rounded-md" placeholder="Enter one menu item per line">${menuText}</textarea>
+        </div>`;
+    }).join('');
+
+    content.innerHTML = `
+        <div class="flex justify-between items-center mb-4">
+            <h3 class="text-2xl font-bold">Manage Weekly Lunch Menu</h3>
+        </div>
+        <p class="mb-4 text-slate-600">Enter the lunch menu for the current week. Each line in the text box will be treated as a separate menu item.</p>
+        <form id="lunch-menu-form" data-week='${JSON.stringify(weekDates)}'>
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                ${formFields}
+            </div>
+            <div class="text-right mt-6">
+                <button type="submit" class="bg-green-600 text-white font-bold py-2 px-6 rounded-lg hover:bg-green-700">Save Menu</button>
+            </div>
+        </form>
+    `;
+    document.getElementById('lunch-menu-form').addEventListener('submit', e => window.handleLunchMenuUpdate(e));
 }
 
 export function renderReports(app, idParts, params) {
@@ -1180,291 +1259,4 @@ function renderReportCardTemplateEditor(app) {
             <div id="rc-palette" class="palette">
                 <h4 class="font-bold text-lg mb-2 text-slate-600">Components</h4>
                 <p class="text-sm text-slate-500 mb-4">Drag components onto the canvas.</p>
-                ${components.map(c => `<div class="palette-item" draggable="true" data-type="${c.type}">${c.icon}<span class="font-semibold">${c.name}</span></div>`).join('')}
-            </div>
-            <div id="rc-canvas" class="canvas"></div>
-        </div>
-    `;
-    
-    const createCanvasItem = (component) => {
-        const el = document.createElement('div');
-        el.className = 'canvas-item';
-        el.dataset.type = component.type;
-        el.draggable = true;
-        el.innerHTML = `<div class="flex items-start gap-3 w-full">
-                <div class="item-icon">${component.icon}</div>
-                <div class="item-content">
-                    <span class="font-bold">${component.name}</span>
-                    <div class="canvas-item-preview">${component.preview}</div>
-                </div>
-            </div>
-            <button class="remove-btn">&times;</button>`;
-        return el;
-    };
-
-    // Populate canvas with existing template
-    const template = state.reportCardTemplates[0] || {};
-    const layout = template.layout || [{ type: 'schoolHeader' }, { type: 'studentInfo' }, { type: 'gradesTable' }, { type: 'attendanceSummary' }];
-    const canvas = document.getElementById('rc-canvas');
-    layout.forEach(item => {
-        const component = components.find(c => c.type === item.type);
-        if(component) {
-            canvas.appendChild(createCanvasItem(component));
-        }
-    });
-
-    // Drag and drop logic
-    const paletteItems = document.querySelectorAll('.palette-item');
-    let draggedItem = null;
-
-    const handleDragStart = (e) => {
-        draggedItem = e.target.closest('.palette-item, .canvas-item');
-        setTimeout(() => { if (draggedItem) draggedItem.style.opacity = '0.5' }, 0);
-    };
-
-    const handleDragEnd = (e) => {
-        setTimeout(() => {
-            if (draggedItem) draggedItem.style.opacity = '1';
-            draggedItem = null;
-        }, 0);
-    };
-
-    paletteItems.forEach(item => {
-        item.addEventListener('dragstart', handleDragStart);
-        item.addEventListener('dragend', handleDragEnd);
-    });
-
-    canvas.addEventListener('dragover', (e) => {
-        e.preventDefault();
-        canvas.classList.add('drag-over');
-        const afterElement = getDragAfterElement(canvas, e.clientY);
-        const placeholder = document.querySelector('.canvas-item-placeholder');
-        if (afterElement == null) {
-            if(!placeholder) canvas.appendChild(createPlaceholder());
-            else canvas.appendChild(placeholder);
-        } else {
-             if(!placeholder) canvas.insertBefore(createPlaceholder(), afterElement);
-             else canvas.insertBefore(placeholder, afterElement);
-        }
-    });
-
-    canvas.addEventListener('dragleave', () => {
-        canvas.classList.remove('drag-over');
-        const placeholder = document.querySelector('.canvas-item-placeholder');
-        if (placeholder) {
-            // A brief delay helps prevent flickering when moving over child elements
-            setTimeout(() => {
-                if (!canvas.matches(':hover')) {
-                     placeholder.remove();
-                }
-            }, 100);
-        }
-    });
-
-    canvas.addEventListener('drop', (e) => {
-        e.preventDefault();
-        canvas.classList.remove('drag-over');
-        const placeholder = document.querySelector('.canvas-item-placeholder');
-
-        if (draggedItem) {
-            const componentType = draggedItem.dataset.type;
-            const component = components.find(c => c.type === componentType);
-            if (component) {
-                const newItem = createCanvasItem(component);
-                if (placeholder) {
-                    canvas.insertBefore(newItem, placeholder);
-                } else {
-                    canvas.appendChild(newItem);
-                }
-                 if(draggedItem.classList.contains('canvas-item')){
-                    draggedItem.remove(); // remove original if it was from canvas
-                }
-            }
-        }
-        if(placeholder) placeholder.remove();
-    });
-    
-    canvas.addEventListener('click', (e) => {
-        if(e.target.classList.contains('remove-btn')) {
-            e.target.closest('.canvas-item').remove();
-        }
-    });
-    
-    canvas.addEventListener('dragstart', (e) => {
-        if(e.target.classList.contains('canvas-item')) {
-            handleDragStart(e);
-        }
-    });
-    canvas.addEventListener('dragend', (e) => {
-        if(e.target.classList.contains('canvas-item')) {
-            handleDragEnd(e);
-        }
-    });
-    
-    const createPlaceholder = () => {
-        const existing = document.querySelector('.canvas-item-placeholder');
-        if (existing) return existing;
-        const p = document.createElement('div');
-        p.className = 'canvas-item-placeholder';
-        return p;
-    }
-
-    function getDragAfterElement(container, y) {
-        const draggableElements = [...container.querySelectorAll('.canvas-item:not([style*="opacity: 0.5"])')];
-        return draggableElements.reduce((closest, child) => {
-            const box = child.getBoundingClientRect();
-            const offset = y - box.top - box.height / 2;
-            if (offset < 0 && offset > closest.offset) {
-                return { offset: offset, element: child };
-            } else {
-                return closest;
-            }
-        }, { offset: Number.NEGATIVE_INFINITY }).element;
-    }
-}
-
-export function renderPrintableSchedule(app, studentId) {
-    const { state } = app;
-    const student = state.students.find(s => s.id === studentId);
-    const content = document.getElementById('printable-schedule-content');
-    if (!content || !student) return;
-
-    const scheduleDoc = state.schedules.find(s => s.studentId === studentId);
-    const schedule = scheduleDoc ? scheduleDoc.schedule : {};
-    
-    let tablesHtml = state.dayTypes.map(dayType => {
-        const timeBlocks = state.timeBlocks.filter(tb => tb.dayTypeId === dayType.id).sort((a,b) => a.startTime.localeCompare(b.startTime));
-        if (timeBlocks.length === 0) return '';
-
-        const rows = timeBlocks.map(block => {
-            const courseId = schedule[block.id];
-            const course = courseId ? state.courses.find(c => c.id === courseId) : null;
-            const teacher = course ? state.teachers.find(t => t.id === course.teacherId) : null;
-            return `<tr>
-                <td class="printable-schedule-table">${block.startTime} - ${block.endTime}</td>
-                <td class="printable-schedule-table">${block.name}</td>
-                <td class="printable-schedule-table">${course?.name || ''}</td>
-                <td class="printable-schedule-table">${teacher?.displayName || ''}</td>
-            </tr>`;
-        }).join('');
-
-        return `<div class="mb-8"><h3 class="text-2xl font-bold mb-2">${dayType.name} Schedule</h3>
-            <table class="printable-schedule-table">
-                <thead><tr><th>Time</th><th>Period</th><th>Course</th><th>Teacher</th></tr></thead>
-                <tbody>${rows}</tbody>
-            </table></div>`;
-    }).join('<div class="page-break"></div>');
-
-    content.innerHTML = `<div class="text-center mb-6">
-        ${state.school.logoUrl ? `<img src="${state.school.logoUrl}" class="mx-auto h-16 mb-2">` : ''}
-        <h1 class="text-3xl">${state.school.name}</h1>
-        <h2 class="text-2xl">Student Schedule: ${student.displayName}</h2>
-        </div>${tablesHtml}`;
-}
-
-
-// --- MODAL CONTENT RENDERERS ---
-
-export function renderReportCardModalContent(app, rc) {
-    const { state } = app;
-    const { data } = rc;
-    const layout = rc.templateLayout || [
-        { type: 'schoolHeader' }, { type: 'studentInfo' }, { type: 'gradesTable' }, { type: 'attendanceSummary' }
-    ];
-
-    const componentHtml = layout.map(component => {
-        switch(component.type) {
-            case 'schoolHeader':
-                return `<div class="text-center mb-8">
-                    ${state.school.logoUrl ? `<img src="${state.school.logoUrl}" class="mx-auto h-20 mb-4">` : ''}
-                    <h1 class="text-4xl font-bold">${state.school.name}</h1>
-                    <h2 class="text-3xl">Report Card</h2>
-                </div>`;
-            case 'studentInfo':
-                return `<div class="flex justify-between text-lg mb-6">
-                    <p><strong>Student:</strong> ${rc.studentName}</p>
-                    <p><strong>Grading Period:</strong> ${rc.periodName}</p>
-                </div>`;
-            case 'gradesTable':
-                if (!data.courses) return '';
-                return data.courses.map(course => {
-                    const gradeRows = course.grades.map(g => `<tr><td class="p-2 border-b">${g.title}</td><td class="p-2 text-center border-b">${g.score ?? 'N/A'} / ${g.maxPoints}</td></tr>`).join('');
-                    const finalGradeHtml = course.finalGradePercent != null 
-                        ? `<tr class="font-bold bg-slate-100"><td class="p-2">Final Grade</td><td class="p-2 text-center">${course.finalGradePercent.toFixed(1)}% (${course.finalLetterGrade})</td></tr>`
-                        : `<tr class="font-bold bg-slate-100"><td class="p-2">Final Grade</td><td class="p-2 text-center">N/A</td></tr>`;
-
-                    return `<div class="mb-6">
-                        <h3 class="text-xl font-bold bg-slate-100 p-2">${course.name}</h3>
-                        <table class="w-full text-sm"><thead><tr><th class="p-2 text-left font-semibold border-b">Assignment</th><th class="p-2 text-center font-semibold border-b">Score</th></tr></thead><tbody>${gradeRows}</tbody><tfoot>${finalGradeHtml}</tfoot></table>
-                    </div>`;
-                }).join('');
-             case 'finalGrade':
-                if (!data.courses) return '';
-                const summaryRows = data.courses.map(course => {
-                    const gradeDisplay = course.finalGradePercent != null 
-                        ? `${course.finalGradePercent.toFixed(1)}% (${course.finalLetterGrade})` 
-                        : 'N/A';
-                    return `<tr><td class="p-2 border-b">${course.name}</td><td class="p-2 text-center border-b">${gradeDisplay}</td></tr>`;
-                }).join('');
-                return `<div class="mt-6"><h3 class="text-xl font-bold bg-slate-100 p-2">Final Grade Summary</h3>
-                    <table class="w-full text-sm"><thead><tr><th class="p-2 text-left">Course</th><th class="p-2 text-center">Final Grade</th></tr></thead><tbody>${summaryRows}</tbody></table>
-                </div>`;
-            case 'attendanceSummary':
-                 if (!data.attendance) return '';
-                 return `<div class="mt-6"><h3 class="text-xl font-bold bg-slate-100 p-2">Attendance Summary</h3>
-                    <p class="p-2"><span class="font-semibold">Absences:</span> ${data.attendance.absent}</p>
-                    <p class="p-2"><span class="font-semibold">Tardies:</span> ${data.attendance.tardy}</p>
-                </div>`;
-            case 'gradingScale':
-                return `<div class="mt-6 text-xs"><h3 class="text-xl font-bold bg-slate-100 p-2">Grading Scale</h3>
-                    <div class="p-2 grid grid-cols-4 gap-2">
-                        <p><strong>A:</strong> 90-100</p>
-                        <p><strong>B:</strong> 80-89</p>
-                        <p><strong>C:</strong> 70-79</p>
-                        <p><strong>D:</strong> 60-69</p>
-                        <p><strong>F:</strong> 0-59</p>
-                    </div>
-                </div>`;
-            case 'teacherComments':
-                 return `<div class="mt-6"><h3 class="text-xl font-bold bg-slate-100 p-2">Comments</h3><div class="p-2 border h-24"></div></div>`
-            case 'principalComment':
-                return `<div class="mt-6"><h3 class="text-xl font-bold bg-slate-100 p-2">Principal's Comment</h3><div class="p-2 border h-24"></div></div>`;
-            case 'signatureLine':
-                 return `<div class="mt-24 pt-4 border-t"><p class="font-semibold">Administrator Signature</p></div>`;
-            case 'pageBreak':
-                return `<div class="page-break"></div>`;
-            default:
-                return '';
-        }
-    }).join('');
-
-    return `<div id="printable-report-card" class="printable-report">${componentHtml}</div>`;
-}
-
-export function renderParentStatementModalContent(app, parent) {
-    const { state } = app;
-    const studentIds = parent.childrenIds || [];
-    const items = state.tuitionItems.filter(item => studentIds.includes(item.studentId));
-    const total = items.reduce((sum, item) => sum + (parseFloat(item.amount) || 0), 0);
-    const itemsHtml = items.map(item => {
-        const student = state.students.find(s => s.id === item.studentId);
-        return `<tr><td class="p-2 border-b">${student?.displayName || ''}</td><td class="p-2 border-b">${item.description}</td><td class="p-2 border-b text-right">$${parseFloat(item.amount).toFixed(2)}</td></tr>`;
-    }).join('');
-
-    return `<div id="printable-statement" class="printable-report">
-        <div class="text-center mb-8">
-            ${state.school.logoUrl ? `<img src="${state.school.logoUrl}" class="mx-auto h-20 mb-4">` : ''}
-            <h1 class="text-4xl">${state.school.name}</h1>
-            <h2 class="text-3xl">Tuition Statement</h2>
-        </div>
-        <div class="text-lg mb-6">
-            <p><strong>Account Holder:</strong> ${parent.displayName}</p>
-            <p><strong>Date:</strong> ${new Date().toLocaleDateString()}</p>
-        </div>
-        <table class="w-full text-left">
-            <thead class="bg-slate-100"><th class="p-2 font-semibold">Student</th><th class="p-2 font-semibold">Description</th><th class="p-2 font-semibold text-right">Amount</th></thead>
-            <tbody>${itemsHtml}</tbody>
-            <tfoot><tr class="font-bold border-t-2 text-xl"><td class="p-2 pt-4" colspan="2">Total Amount Due</td><td class="p-2 pt-4 text-right">$${total.toFixed(2)}</td></tr></tfoot>
-        </table>
-    </div>`;
-}
+                ${components.map(c => `<div class="palette-

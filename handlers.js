@@ -1,53 +1,29 @@
 import { signOut, createUserWithEmailAndPassword, updateProfile, signInWithEmailAndPassword, GoogleAuthProvider, signInWithPopup } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
 import { doc, updateDoc, addDoc, collection, setDoc, deleteDoc, writeBatch, query, where, getDocs, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-import { ref, uploadBytes, getDownloadURL, deleteObject } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js";
+import { ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js";
 import { showToast, openModal, closeModal } from './utils.js';
 import { renderPrintableSchedule, renderReportCardModalContent, renderParentStatementModalContent } from './views.js';
-import { Type } from "https://esm.run/@google/genai";
 
 // This function makes class methods available on the window object for inline event handlers.
 export function attachHandlersToWindow(app) {
     const handlers = {
-        // Auth
-        handleLoginSubmit: (e) => handleLoginSubmit(app, e),
-        handleGoogleLogin: () => handleGoogleLogin(app),
-        handleSignupSubmit: (e) => handleSignupSubmit(app, e),
-        handleCreateSchoolSubmit: (e) => handleCreateSchoolSubmit(app, e),
-
-        // User Management
         openUserModal: (userId = null) => openUserModal(app, userId),
         handleUserFormSubmit: (e) => handleUserFormSubmit(app, e),
         deleteUser: (userId) => deleteUser(app, userId),
         openUserCsvImportModal: () => openUserCsvImportModal(app),
         handleUserCsvImport: (e) => handleUserCsvImport(app, e),
-        
-        // Academics
+        handleAttendanceNoteSubmit: (e) => handleAttendanceNoteSubmit(app, e),
+        handleScheduleFormSubmit: (e, studentId) => handleScheduleFormSubmit(app, e, studentId),
         openCourseModal: (courseId = null, event) => openCourseModal(app, courseId, event),
         handleCourseFormSubmit: (e) => handleCourseFormSubmit(app, e),
         deleteCourse: (courseId, event) => deleteCourse(app, courseId, event),
+        handleGeneralSettingsSubmit: (e) => handleGeneralSettingsSubmit(app, e),
         handleAnnouncementSubmit: (e, courseId) => handleAnnouncementSubmit(app, e, courseId),
         openAssignmentModal: (assignmentId, courseId) => openAssignmentModal(app, assignmentId, courseId),
         handleAssignmentFormSubmit: (e) => handleAssignmentFormSubmit(app, e),
         deleteAssignment: (assignmentId) => deleteAssignment(app, assignmentId),
         updateGrade: (element, studentId, assignmentId, courseId, score, gradeId) => updateGrade(app, element, studentId, assignmentId, courseId, score, gradeId),
-        
-        // Attendance & Schedule
-        handleAttendanceNoteSubmit: (e) => handleAttendanceNoteSubmit(app, e),
         handleAttendanceSubmit: (courseId, date, attendanceId) => handleAttendanceSubmit(app, courseId, date, attendanceId),
-        handleScheduleFormSubmit: (e, studentId) => handleScheduleFormSubmit(app, e, studentId),
-        openPrintableScheduleModal: (studentId) => openPrintableScheduleModal(app, studentId),
-        
-        // Profile
-        handleProfileUpdate: (e) => handleProfileUpdate(app, e),
-        
-        // Homework
-        openHomeworkModal: (assignmentId) => openHomeworkModal(app, assignmentId),
-        handleHomeworkFileUpload: (e, assignmentId) => handleHomeworkFileUpload(app, e, assignmentId),
-        handleSubmissionGradeForm: (e, submissionId) => handleSubmissionGradeForm(app, e, submissionId),
-
-        // Settings
-        handleGeneralSettingsSubmit: (e) => handleGeneralSettingsSubmit(app, e),
-        handleBrandingSettingsSubmit: (e) => handleBrandingSettingsSubmit(app, e),
         openDayTypeModal: (dayTypeId = null) => openDayTypeModal(app, dayTypeId),
         handleDayTypeSubmit: (e) => handleDayTypeSubmit(app, e),
         deleteDayType: (id) => deleteDayType(app, id),
@@ -64,8 +40,6 @@ export function attachHandlersToWindow(app) {
         openLaunchpadLinkModal: (linkId = null) => openLaunchpadLinkModal(app, linkId),
         handleLaunchpadLinkSubmit: (e) => handleLaunchpadLinkSubmit(app, e),
         deleteLaunchpadLink: (id) => deleteLaunchpadLink(app, id),
-        
-        // Report Cards
         openGradingPeriodModal: (periodId=null) => openGradingPeriodModal(app, periodId),
         handleGradingPeriodSubmit: (e) => handleGradingPeriodSubmit(app, e),
         deleteGradingPeriod: (id) => deleteGradingPeriod(app, id),
@@ -73,25 +47,18 @@ export function attachHandlersToWindow(app) {
         deleteReportCard: (rcId) => deleteReportCard(app, rcId),
         generateReportCardsForPeriod: (periodId) => generateReportCardsForPeriod(app, periodId),
         openReportCardModal: (rcId) => openReportCardModal(app, rcId),
-        
-        // Reports & PDF
         generatePdfFromHtml: (elementId, pdfTitle) => generatePdfFromHtml(app, elementId, pdfTitle),
         openPaymentModal: () => openPaymentModal(app),
         openParentStatementModal: (parentId = null) => openParentStatementModal(app, parentId),
-
-        // Version 2.0 Handlers
-        handleGenerateLessonPlan: (e) => handleGenerateLessonPlan(app, e),
-        handleGenerateQuizQuestions: (e) => handleGenerateQuizQuestions(app, e),
-        openQuizModal: (courseId, quizId = null) => openQuizModal(app, courseId, quizId),
-        handleQuizFormSubmit: (e, courseId, quizId) => handleQuizFormSubmit(app, e, courseId, quizId),
-        deleteQuiz: (quizId) => deleteQuiz(app, quizId),
-        handleQuizQuestionSubmit: (e, quizId) => handleQuizQuestionSubmit(app, e, quizId),
-        deleteQuizQuestion: (quizId, questionId) => deleteQuizQuestion(app, quizId, questionId),
-        addAiQuestionToQuiz: (quizId, questionIndex) => addAiQuestionToQuiz(app, quizId, questionIndex),
-        handleQuizSubmission: (e, quizId) => handleQuizSubmission(app, e, quizId),
-        handleGradeShortAnswer: (e, submissionId, questionId) => handleGradeShortAnswer(app, e, submissionId, questionId),
-        
-        // Generic
+        openPrintableScheduleModal: (studentId) => openPrintableScheduleModal(app, studentId),
+        handleProfileUpdate: (e) => handleProfileUpdate(app, e),
+        openHomeworkModal: (assignmentId) => openHomeworkModal(app, assignmentId),
+        handleHomeworkFileUpload: (e, assignmentId) => handleHomeworkFileUpload(app, e, assignmentId),
+        handleSubmissionGradeForm: (e, submissionId) => handleSubmissionGradeForm(app, e, submissionId),
+        openIncidentModal: (studentId, incidentId = null) => openIncidentModal(app, studentId, incidentId),
+        deleteIncident: (incidentId) => deleteIncident(app, incidentId),
+        handleLunchMenuUpdate: (e) => handleLunchMenuUpdate(app, e),
+        updateAttendanceNoteStatus: (noteId, status) => updateAttendanceNoteStatus(app, noteId, status),
         closeModal: closeModal,
     };
     
@@ -159,8 +126,6 @@ export async function handleCreateSchoolSubmit(app, e) {
             name: data.schoolName, 
             theme: 'sky', 
             logoUrl: '', 
-            faviconUrl: '',
-            customCss: '',
             createdAt: serverTimestamp() 
         });
 
@@ -362,6 +327,7 @@ export async function handleAttendanceNoteSubmit(app, e) {
         await addDoc(collection(db, 'schools', state.school.id, 'attendanceNotes'), {
             ...data,
             parentId: state.user.id,
+            status: 'submitted',
             submittedAt: serverTimestamp()
         });
         showToast('Attendance note submitted successfully!', 'success');
@@ -994,12 +960,18 @@ export async function handleHomeworkFileUpload(app, e, assignmentId) {
     const form = e.target;
     const fileInput = form.querySelector('input[type="file"]');
     const file = fileInput.files[0];
+
     if (!file) {
         showToast("Please select a file to upload.", "error");
         return;
     }
 
+    const progressBarContainer = document.getElementById('upload-progress-container');
+    const progressBar = document.getElementById('upload-progress-bar-inner');
     const submitBtn = form.querySelector('button[type="submit"]');
+
+    if (progressBarContainer) progressBarContainer.classList.remove('hidden');
+    if (progressBar) progressBar.style.width = '50%'; // Visual cue for starting
     submitBtn.disabled = true;
     submitBtn.innerHTML = 'Uploading...';
 
@@ -1009,6 +981,8 @@ export async function handleHomeworkFileUpload(app, e, assignmentId) {
         
         const storageRef = ref(storage, `schools/${state.school.id}/homeworkSubmissions/${studentId}/${assignmentId}/${file.name}`);
         const snapshot = await uploadBytes(storageRef, file);
+        
+        if (progressBar) progressBar.style.width = '100%';
         const downloadURL = await getDownloadURL(snapshot.ref);
 
         const existingSubmission = state.homeworkSubmissions.find(s => s.studentId === studentId && s.assignmentId === assignmentId);
@@ -1020,12 +994,13 @@ export async function handleHomeworkFileUpload(app, e, assignmentId) {
             submittedAt: serverTimestamp(),
             fileUrl: downloadURL,
             fileName: file.name,
+            fileType: file.type,
             status: 'submitted'
         };
 
         if (existingSubmission) {
             await updateDoc(doc(db, 'schools', state.school.id, 'homeworkSubmissions', existingSubmission.id), submissionData);
-            showToast('Homework updated successfully!', 'success');
+            showToast('Homework re-submitted successfully!', 'success');
         } else {
             await addDoc(collection(db, 'schools', state.school.id, 'homeworkSubmissions'), submissionData);
             showToast('Homework submitted successfully!', 'success');
@@ -1037,82 +1012,8 @@ export async function handleHomeworkFileUpload(app, e, assignmentId) {
         showToast(`Upload failed: ${error.message}`, 'error');
         submitBtn.disabled = false;
         submitBtn.textContent = 'Submit';
-    }
-}
-
-export function openHomeworkModal(app, assignmentId) {
-    const { state } = app;
-    const assignment = state.assignments.find(a => a.id === assignmentId);
-    if (!assignment) {
-        showToast("Homework assignment not found.", "error");
-        return;
-    }
-
-    const title = `${assignment.title}`;
-    let body = `<div class="mb-4 p-4 bg-slate-50 rounded-lg"><p class="font-semibold text-slate-700">Due Date: <span class="font-normal">${assignment.dueDate}</span></p><p class="font-semibold text-slate-700">Points: <span class="font-normal">${assignment.maxPoints}</span></p></div>`;
-
-    if (state.user.role === 'student') {
-        const mySubmission = state.homeworkSubmissions.find(s => s.studentId === state.user.id && s.assignmentId === assignment.id);
-        body += `
-            <h4 class="font-bold text-lg text-slate-800 mb-2">My Submission</h4>
-            <form id="homework-upload-form" onsubmit="window.handleHomeworkFileUpload(event, '${assignmentId}')">
-                <label for="homework-file-input" class="file-upload-area">
-                    <p class="font-semibold text-slate-700">Drag & Drop or Click to Upload</p>
-                    <p class="text-sm text-slate-500">Attach a photo of your work</p>
-                    <input id="homework-file-input" type="file" accept="image/*,application/pdf">
-                </label>
-                <div id="file-preview-container" class="mt-4 text-center"></div>
-                <button type="submit" class="w-full mt-4 bg-green-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-green-700">Submit</button>
-            </form>
-        `;
-
-        if (mySubmission) {
-            body += `<div class="mt-6 border-t pt-4">
-                <p class="font-semibold text-slate-800">Status: <span class="capitalize font-normal px-2 py-1 rounded-full ${mySubmission.status === 'submitted' ? 'bg-blue-100 text-blue-800' : 'bg-green-100 text-green-800'}">${mySubmission.status}</span></p>
-                <p class="font-semibold mt-2">Submitted File: <a href="${mySubmission.fileUrl}" target="_blank" class="text-primary-600 hover:underline">${mySubmission.fileName}</a></p>
-                <img src="${mySubmission.fileUrl}" alt="Submission preview" class="submission-preview mx-auto">
-                ${mySubmission.grade ? `<p class="font-semibold mt-2">Grade: <span class="font-bold">${mySubmission.grade} / ${assignment.maxPoints}</span></p>` : ''}
-                ${mySubmission.feedback ? `<div class="mt-2"><p class="font-semibold">Feedback:</p><p class="p-2 bg-slate-100 rounded mt-1">${mySubmission.feedback}</p></div>` : ''}
-            </div>`;
-        }
-    } else if (app.canEdit(assignment)) { // Teacher/Admin view
-        const enrolledStudentIds = app.getEnrolledStudentIds(assignment.courseId);
-        const students = state.students.filter(s => enrolledStudentIds.includes(s.id));
-        
-        let studentListHtml = students.map(student => {
-            const submission = state.homeworkSubmissions.find(s => s.studentId === student.id && s.assignmentId === assignment.id);
-            return `
-                <div class="submission-list-item">
-                    <p class="font-semibold">${student.displayName}</p>
-                    ${submission ? `
-                        <div class="flex items-center gap-4">
-                            <a href="${submission.fileUrl}" target="_blank" class="submission-file-link">View File</a>
-                            <form class="flex items-center gap-2" onsubmit="window.handleSubmissionGradeForm(event, '${submission.id}')">
-                                <input type="number" name="grade" placeholder="Grade" class="p-1 border rounded w-20 text-center" value="${submission.grade || ''}">
-                                <span class="text-slate-400">/ ${assignment.maxPoints}</span>
-                                <button type="submit" class="text-xs bg-green-500 text-white font-bold py-1 px-2 rounded hover:bg-green-600">SAVE</button>
-                            </form>
-                        </div>
-                    ` : `
-                        <span class="text-sm text-slate-400 font-semibold">Not Submitted</span>
-                    `}
-                </div>`;
-        }).join('');
-        
-        body += `<h4 class="font-bold text-lg text-slate-800 mb-2 mt-4">Student Submissions</h4><div class="space-y-1">${studentListHtml}</div>`;
-    }
-
-    openModal(title, body, '2xl');
-    
-    if (state.user.role === 'student') {
-        const fileInput = document.getElementById('homework-file-input');
-        const previewContainer = document.getElementById('file-preview-container');
-        fileInput.addEventListener('change', (e) => {
-            const file = e.target.files[0];
-            if (file) {
-                previewContainer.innerHTML = `<p class="text-slate-600">Selected: ${file.name}</p>`;
-            }
-        });
+        if (progressBarContainer) progressBarContainer.classList.add('hidden');
+        if (progressBar) progressBar.style.width = '0%';
     }
 }
 
@@ -1120,316 +1021,124 @@ export async function handleSubmissionGradeForm(app, e, submissionId) {
     e.preventDefault();
     const { db } = app;
     const grade = e.target.elements.grade.value;
+    const feedback = e.target.elements.feedback.value;
     
     try {
         await updateDoc(doc(db, 'schools', app.state.school.id, 'homeworkSubmissions', submissionId), {
             grade: Number(grade),
+            feedback: feedback,
             status: 'graded'
         });
-        showToast('Grade saved!', 'success');
+        showToast('Grade and feedback saved!', 'success');
     } catch (err) {
         showToast(`Error saving grade: ${err.message}`, 'error');
     }
 }
 
-
-// --- VERSION 2.0 HANDLERS ---
-
-// AI Assistant
-export async function handleGenerateLessonPlan(app, e) {
-    e.preventDefault();
-    if (!app.ai) {
-        showToast('AI features are not available. Please configure the API key.', 'error');
+// --- BEHAVIOR LOG HANDLERS ---
+export function openIncidentModal(app, studentId, incidentId = null) {
+    const { state } = app;
+    const incident = incidentId ? state.incidents.find(i => i.id === incidentId) : null;
+    const student = state.students.find(s => s.id === studentId);
+    if (!student && !incident) {
+        showToast('Student not found', 'error');
         return;
     }
+    const title = incident ? 'Edit Incident' : `Log Incident for ${student.displayName}`;
 
-    const resultDiv = document.getElementById('ai-result');
-    const thinkingDiv = document.getElementById('ai-thinking-overlay');
-    const form = e.target;
-    const formData = new FormData(form);
-    const data = Object.fromEntries(formData.entries());
-
-    resultDiv.innerHTML = '';
-    thinkingDiv.classList.remove('hidden');
-
-    const prompt = `Create a detailed lesson plan for a ${data.gradeLevel} class on the topic of "${data.topic}". 
-    The key learning objectives are: ${data.objectives}.
-    Structure the lesson plan with the following sections:
-    1.  **Lesson Title**
-    2.  **Subject & Grade Level**
-    3.  **Learning Objectives** (reiterate and expand if necessary)
-    4.  **Materials & Resources** (list of required items)
-    5.  **Lesson Activities** (a step-by-step procedure, including introduction, direct instruction, guided practice, and independent practice)
-    6.  **Differentiation** (suggestions for supporting struggling students and challenging advanced students)
-    7.  **Assessment** (how to measure student understanding)
-    Format the output as clean HTML using headings (h3), paragraphs (p), and lists (ul, li). Do not include markdown.`;
-
-    try {
-        const response = await app.ai.models.generateContent({
-            model: 'gemini-2.5-flash',
-            contents: prompt,
-        });
-        resultDiv.innerHTML = response.text;
-    } catch (error) {
-        console.error("Gemini API Error:", error);
-        resultDiv.innerHTML = `<p class="text-red-500">An error occurred while generating the lesson plan. Please check the console for details.</p>`;
-        showToast('AI generation failed.', 'error');
-    } finally {
-        thinkingDiv.classList.add('hidden');
-    }
-}
-
-export async function handleGenerateQuizQuestions(app, e) {
-    e.preventDefault();
-    if (!app.ai) { return; }
-
-    const resultDiv = document.getElementById('ai-result');
-    const thinkingDiv = document.getElementById('ai-thinking-overlay');
-    const form = e.target;
-    const formData = new FormData(form);
-    const data = Object.fromEntries(formData.entries());
-
-    resultDiv.innerHTML = '';
-    thinkingDiv.classList.remove('hidden');
-
-    const prompt = `Generate ${data.numQuestions} quiz questions about "${data.topic}".
-    Include a mix of question types as specified. For multiple choice questions, provide 4 options and clearly indicate the correct answer.`;
-
-    const questionSchema = {
-        type: Type.OBJECT,
-        properties: {
-            question: { type: Type.STRING },
-            type: { type: Type.STRING, enum: ['multiple_choice', 'short_answer'] },
-            options: { type: Type.ARRAY, items: { type: Type.STRING } },
-            answer: { type: Type.STRING },
-        },
-        required: ['question', 'type', 'answer']
-    };
-
-    try {
-        const response = await app.ai.models.generateContent({
-            model: "gemini-2.5-flash",
-            contents: prompt,
-            config: {
-                responseMimeType: "application/json",
-                responseSchema: {
-                    type: Type.ARRAY,
-                    items: questionSchema,
-                },
-            },
-        });
-        
-        const questions = JSON.parse(response.text);
-        window.generatedQuestions = questions; // Store globally for adding to quiz
-
-        const courseOptions = app.state.courses.filter(c => app.canEdit(c)).map(c => {
-             const quizzes = app.state.quizzes.filter(q => q.courseId === c.id);
-             return `<optgroup label="${c.name}">
-                ${quizzes.map(q => `<option value="${q.id}">${q.title}</option>`).join('')}
-             </optgroup>`;
-        }).join('');
-
-        resultDiv.innerHTML = questions.map((q, index) => `
-            <div class="p-4 bg-slate-50 rounded-lg mb-3">
-                <p class="font-semibold">${index + 1}. ${q.question}</p>
-                ${q.type === 'multiple_choice' ? `<ul class="list-disc pl-6 mt-2">${q.options.map(opt => `<li>${opt} ${opt === q.answer ? '<span class="text-green-600 font-bold">(Correct)</span>' : ''}</li>`).join('')}</ul>` : `<p class="text-sm text-slate-500 mt-1"><em>Answer: ${q.answer}</em></p>`}
-                <div class="mt-2 text-right">
-                    <select id="quiz-select-${index}" class="p-1 border rounded-md text-sm"><option value="">Add to quiz...</option>${courseOptions}</select>
-                    <button onclick="window.addAiQuestionToQuiz(document.getElementById('quiz-select-${index}').value, ${index})" class="bg-blue-500 text-white text-xs font-bold py-1 px-2 rounded hover:bg-blue-600">ADD</button>
-                </div>
-            </div>`).join('');
-    } catch (error) {
-        console.error("Gemini API Error:", error);
-        resultDiv.innerHTML = `<p class="text-red-500">An error occurred. The AI may have returned an unexpected format. Please try again.</p>`;
-        showToast('AI generation failed.', 'error');
-    } finally {
-        thinkingDiv.classList.add('hidden');
-    }
-}
-
-// Quiz Management
-export function openQuizModal(app, courseId, quizId = null) {
-    const quiz = quizId ? app.state.quizzes.find(q => q.id === quizId) : null;
-    const title = quiz ? 'Edit Quiz' : 'Create New Quiz';
-    const body = `<form id="quiz-form">
-        <label class="block font-semibold mb-1">Quiz Title</label>
-        <input type="text" name="title" value="${quiz?.title || ''}" class="w-full p-2 border rounded-lg mb-4" required>
-        <label class="block font-semibold mb-1">Due Date</label>
-        <input type="date" name="dueDate" value="${quiz?.dueDate || ''}" class="w-full p-2 border rounded-lg mb-4">
-        <button type="submit" class="w-full bg-green-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-green-700 mt-6">Save Quiz</button>
+    const body = `<form id="incident-form">
+        <input type="hidden" name="id" value="${incident?.id || ''}">
+        <input type="hidden" name="studentId" value="${incident?.studentId || studentId}">
+        <label class="block font-semibold mb-1">Date of Incident</label>
+        <input type="date" name="date" value="${incident?.date || new Date().toISOString().split('T')[0]}" class="w-full p-2 border rounded-lg mb-4" required>
+        <label class="block font-semibold mb-1">Type</label>
+        <select name="type" class="w-full p-2 border rounded-lg mb-4" required>
+            <option value="positive" ${incident?.type === 'positive' ? 'selected' : ''}>Positive</option>
+            <option value="neutral" ${incident?.type === 'neutral' ? 'selected' : ''}>Neutral</option>
+            <option value="negative" ${incident?.type === 'negative' ? 'selected' : ''}>Negative</option>
+        </select>
+        <label class="block font-semibold mb-1">Description</label>
+        <textarea name="description" rows="4" class="w-full p-2 border rounded-lg mb-4" required>${incident?.description || ''}</textarea>
+        <button type="submit" class="w-full bg-green-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-green-700 mt-6">Save Incident</button>
     </form>`;
+    
     openModal(title, body);
-    document.getElementById('quiz-form').addEventListener('submit', (e) => handleQuizFormSubmit(app, e, courseId, quizId));
+    document.getElementById('incident-form').addEventListener('submit', (e) => handleIncidentFormSubmit(app, e));
 }
 
-export async function handleQuizFormSubmit(app, e, courseId, quizId) {
+export async function handleIncidentFormSubmit(app, e) {
     e.preventDefault();
-    const { db } = app;
+    const { state, db } = app;
     const formData = new FormData(e.target);
-    const data = {
-        title: formData.get('title'),
-        dueDate: formData.get('dueDate'),
-        courseId: courseId,
-        questions: quizId ? app.state.quizzes.find(q=>q.id===quizId).questions || [] : [],
-    };
-
+    const data = Object.fromEntries(formData.entries());
+    
     try {
-        if (quizId) {
-            await updateDoc(doc(db, 'schools', app.state.school.id, 'quizzes', quizId), data);
-            showToast('Quiz updated!', 'success');
+        if (data.id) {
+            const incidentId = data.id;
+            delete data.id;
+            await updateDoc(doc(db, 'schools', state.school.id, 'incidents', incidentId), data);
+            showToast('Incident updated!', 'success');
         } else {
-            await addDoc(collection(db, 'schools', app.state.school.id, 'quizzes'), data);
-            showToast('Quiz created!', 'success');
+            await addDoc(collection(db, 'schools', state.school.id, 'incidents'), {
+                ...data,
+                reporterId: state.user.id,
+                reporterName: state.user.displayName,
+                createdAt: serverTimestamp()
+            });
+            showToast('Incident logged!', 'success');
         }
         closeModal();
     } catch (err) {
-        showToast(`Error saving quiz: ${err.message}`, 'error');
+        showToast(`Error saving incident: ${err.message}`, 'error');
     }
 }
 
-export async function deleteQuiz(app, quizId) {
-    if (confirm('Are you sure you want to delete this quiz and all its submissions?')) {
+export async function deleteIncident(app, incidentId) {
+    if (confirm('Are you sure you want to delete this incident log?')) {
         try {
-            await deleteDoc(doc(app.db, 'schools', app.state.school.id, 'quizzes', quizId));
-            showToast('Quiz deleted.', 'success');
-        } catch (err) { showToast(`Error: ${err.message}`, 'error'); }
-    }
-}
-
-export async function handleQuizQuestionSubmit(app, e, quizId) {
-    e.preventDefault();
-    const quiz = app.state.quizzes.find(q => q.id === quizId);
-    if (!quiz) return;
-
-    const formData = new FormData(e.target);
-    const questionType = formData.get('type');
-    let questionData;
-
-    if (questionType === 'multiple_choice') {
-        questionData = {
-            id: Date.now().toString(),
-            type: 'multiple_choice',
-            question: formData.get('question'),
-            options: [formData.get('option1'), formData.get('option2'), formData.get('option3'), formData.get('option4')].filter(Boolean),
-            answer: formData.get('answer'),
-        };
-    } else {
-        questionData = {
-            id: Date.now().toString(),
-            type: 'short_answer',
-            question: formData.get('question'),
-            answer: formData.get('answer') // Optional correct answer for reference
-        };
-    }
-    
-    const updatedQuestions = [...(quiz.questions || []), questionData];
-    try {
-        await updateDoc(doc(app.db, 'schools', app.state.school.id, 'quizzes', quizId), { questions: updatedQuestions });
-        e.target.reset();
-    } catch (err) { showToast(`Error saving question: ${err.message}`, 'error'); }
-}
-
-export async function deleteQuizQuestion(app, quizId, questionId) {
-     const quiz = app.state.quizzes.find(q => q.id === quizId);
-    if (!quiz) return;
-    const updatedQuestions = quiz.questions.filter(q => q.id !== questionId);
-     try {
-        await updateDoc(doc(app.db, 'schools', app.state.school.id, 'quizzes', quizId), { questions: updatedQuestions });
-    } catch (err) { showToast(`Error deleting question: ${err.message}`, 'error'); }
-}
-
-export async function addAiQuestionToQuiz(app, quizId, questionIndex) {
-    if (!quizId) {
-        showToast('Please select a quiz to add this question to.', 'error');
-        return;
-    }
-    const question = window.generatedQuestions[questionIndex];
-    const quiz = app.state.quizzes.find(q => q.id === quizId);
-    if (!question || !quiz) {
-        showToast('Could not find quiz or question data.', 'error');
-        return;
-    }
-    
-    const newQuestion = { id: Date.now().toString(), ...question };
-    const updatedQuestions = [...(quiz.questions || []), newQuestion];
-     try {
-        await updateDoc(doc(app.db, 'schools', app.state.school.id, 'quizzes', quizId), { questions: updatedQuestions });
-        showToast(`Question added to "${quiz.title}"!`, 'success');
-    } catch (err) { showToast(`Error adding question: ${err.message}`, 'error'); }
-}
-
-// Quiz Taking and Grading
-export async function handleQuizSubmission(app, e, quizId) {
-    e.preventDefault();
-    const { state, db } = app;
-    const quiz = state.quizzes.find(q => q.id === quizId);
-    if (!quiz) return;
-
-    const formData = new FormData(e.target);
-    const answers = {};
-    let score = 0;
-    let maxScore = 0;
-
-    quiz.questions.forEach(q => {
-        const answer = formData.get(q.id);
-        answers[q.id] = answer;
-        if (q.type === 'multiple_choice') {
-            maxScore += 1;
-            if (answer === q.answer) {
-                score += 1;
-            }
+            await deleteDoc(doc(app.db, 'schools', app.state.school.id, 'incidents', incidentId));
+            showToast('Incident deleted.', 'success');
+        } catch (err) {
+            showToast(`Error deleting incident: ${err.message}`, 'error');
         }
-    });
-
-    const submissionData = {
-        quizId,
-        courseId: quiz.courseId,
-        studentId: state.user.id,
-        submittedAt: serverTimestamp(),
-        answers,
-        autoScore: score,
-        manualScore: 0,
-        maxScore,
-        totalScore: score,
-        isGraded: quiz.questions.every(q => q.type === 'multiple_choice'),
-    };
-    
-    try {
-        await addDoc(collection(db, 'schools', state.school.id, 'quizSubmissions'), submissionData);
-        showToast('Quiz submitted successfully!', 'success');
-        window.location.hash = `#/courses/${quiz.courseId}?tab=quizzes`;
-    } catch(err) {
-        showToast(`Error submitting quiz: ${err.message}`, 'error');
     }
 }
 
-export async function handleGradeShortAnswer(app, e, submissionId, questionId) {
+// --- LUNCH MENU HANDLERS ---
+export async function handleLunchMenuUpdate(app, e) {
     e.preventDefault();
-    const submission = app.state.quizSubmissions.find(s => s.id === submissionId);
-    if (!submission) return;
-
-    const points = Number(e.target.elements.points.value);
-    const updatedAnswers = { ...submission.answers, [`${questionId}_grade`]: points };
+    const { db, state } = app;
+    const form = e.target;
+    const formData = new FormData(form);
     
-    // Recalculate total score
-    const quiz = app.state.quizzes.find(q => q.id === submission.quizId);
-    let manualScore = 0;
-    quiz.questions.forEach(q => {
-        if (q.type === 'short_answer') {
-            manualScore += updatedAnswers[`${q.id}_grade`] || 0;
-        }
-    });
-    const totalScore = (submission.autoScore || 0) + manualScore;
+    const batch = writeBatch(db);
+    const weekDates = JSON.parse(form.dataset.week);
+
+    for (const date of weekDates) {
+        const menuItems = formData.get(`menu_${date}`)
+            .split('\n')
+            .map(item => item.trim())
+            .filter(item => item); // remove empty lines
+        
+        const docRef = doc(db, 'schools', state.school.id, 'lunchMenu', date);
+        batch.set(docRef, { date, items: menuItems });
+    }
 
     try {
-        await updateDoc(doc(app.db, 'schools', app.state.school.id, 'quizSubmissions', submissionId), {
-            answers: updatedAnswers,
-            manualScore,
-            totalScore,
-            isGraded: true, // Assuming grading one means the whole thing is graded
-        });
-        showToast('Grade saved!', 'success');
-    } catch(err) {
-        showToast(`Error saving grade: ${err.message}`, 'error');
+        await batch.commit();
+        showToast('Lunch menu updated successfully!', 'success');
+    } catch (err) {
+        showToast(`Error saving menu: ${err.message}`, 'error');
+    }
+}
+
+// --- ATTENDANCE NOTE HANDLERS ---
+export async function updateAttendanceNoteStatus(app, noteId, status) {
+    const { db } = app;
+    try {
+        await updateDoc(doc(db, 'schools', app.state.school.id, 'attendanceNotes', noteId), { status: status });
+        showToast('Note status updated.', 'success');
+    } catch (err) {
+        showToast(`Error updating note: ${err.message}`, 'error');
     }
 }
