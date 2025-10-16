@@ -1,5 +1,5 @@
 import { signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-import { setPageTitle, showToast } from './utils.js';
+import { setPageTitle, showToast, openModal } from './utils.js';
 import * as C from './constants.js';
 import { handleLoginSubmit, handleGoogleLogin, handleSignupSubmit, handleCreateSchoolSubmit } from './handlers.js';
 
@@ -1259,4 +1259,468 @@ function renderReportCardTemplateEditor(app) {
             <div id="rc-palette" class="palette">
                 <h4 class="font-bold text-lg mb-2 text-slate-600">Components</h4>
                 <p class="text-sm text-slate-500 mb-4">Drag components onto the canvas.</p>
-                ${components.map(c => `<div class="palette-
+                ${components.map(c => `
+                    <div class="palette-item" draggable="true" data-type="${c.type}">
+                        ${c.icon}
+                        <span>${c.name}</span>
+                    </div>
+                `).join('')}
+            </div>
+            <div id="rc-canvas" class="canvas"></div>
+        </div>
+    `;
+    const canvas = document.getElementById('rc-canvas');
+    const template = state.reportCardTemplates[0];
+    if (template && template.layout) {
+        template.layout.forEach(item => {
+            const component = components.find(c => c.type === item.type);
+            if (component) {
+                canvas.appendChild(createCanvasItem(component));
+            }
+        });
+    }
+    attachDragAndDropListeners(components);
+}
+
+function createCanvasItem(component) {
+    const item = document.createElement('div');
+    item.className = 'canvas-item';
+    item.dataset.type = component.type;
+    item.draggable = true;
+    item.innerHTML = `
+        <div class="flex items-start gap-4 flex-grow">
+            <span class="item-icon">${component.icon}</span>
+            <div class="item-content">
+                <h5 class="font-bold text-slate-700">${component.name}</h5>
+                <div class="canvas-item-preview">${component.preview}</div>
+            </div>
+        </div>
+        <button class="remove-btn" onclick="this.parentElement.remove()">&times;</button>
+    `;
+    return item;
+}
+
+function attachDragAndDropListeners(components) {
+    const paletteItems = document.querySelectorAll('#rc-palette .palette-item');
+    const canvas = document.getElementById('rc-canvas');
+    if (!canvas) return;
+    let draggedItem = null;
+    let placeholder = document.createElement('div');
+    placeholder.className = 'canvas-item-placeholder';
+
+    const getDragAfterElement = (container, y) => {
+        const draggableElements = [...container.querySelectorAll('.canvas-item:not([style*="display: none"])')];
+        return draggableElements.reduce((closest, child) => {
+            const box = child.getBoundingClientRect();
+            const offset = y - box.top - box.height / 2;
+            if (offset < 0 && offset > closest.offset) {
+                return { offset: offset, element: child };
+            } else {
+                return closest;
+            }
+        }, { offset: Number.NEGATIVE_INFINITY }).element;
+    };
+
+    const addCanvasItemListeners = (item) => {
+        item.addEventListener('dragstart', (e) => {
+            draggedItem = e.target.closest('.canvas-item');
+            e.dataTransfer.effectAllowed = 'move';
+            setTimeout(() => { item.style.display = 'none'; }, 0);
+        });
+        item.addEventListener('dragend', () => {
+            setTimeout(() => {
+                if (draggedItem) draggedItem.style.display = 'flex';
+                draggedItem = null;
+                if (placeholder.parentElement) placeholder.remove();
+            }, 0);
+        });
+    };
+
+    paletteItems.forEach(item => {
+        item.addEventListener('dragstart', (e) => {
+            draggedItem = e.target.closest('.palette-item');
+            e.dataTransfer.effectAllowed = 'copy';
+        });
+    });
+
+    canvas.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        canvas.classList.add('drag-over');
+        const afterElement = getDragAfterElement(canvas, e.clientY);
+        if (afterElement == null) {
+            canvas.appendChild(placeholder);
+        } else {
+            canvas.insertBefore(placeholder, afterElement);
+        }
+    });
+    
+    canvas.addEventListener('dragleave', () => { canvas.classList.remove('drag-over'); });
+    canvas.addEventListener('dragend', () => { canvas.classList.remove('drag-over'); });
+    
+    canvas.addEventListener('drop', (e) => {
+        e.preventDefault();
+        canvas.classList.remove('drag-over');
+        if (!draggedItem) return;
+
+        let newItem;
+        if (draggedItem.classList.contains('canvas-item')) { // Reordering
+            newItem = draggedItem;
+        } else { // New item from palette
+            const type = draggedItem.dataset.type;
+            const component = components.find(c => c.type === type);
+            if (component) {
+                newItem = createCanvasItem(component);
+                addCanvasItemListeners(newItem);
+            }
+        }
+
+        if (newItem && placeholder.parentElement) {
+            canvas.replaceChild(newItem, placeholder);
+            newItem.style.display = 'flex';
+        }
+        draggedItem = null;
+    });
+    
+    document.querySelectorAll('#rc-canvas .canvas-item').forEach(item => {
+        addCanvasItemListeners(item);
+    });
+}
+
+// --- MODAL & PRINTABLE CONTENT RENDERERS ---
+
+export function openHomeworkModal(app, assignmentId) {
+    const { state } = app;
+    const assignment = state.assignments.find(a => a.id === assignmentId);
+    if (!assignment) {
+        showToast('Assignment not found.', 'error');
+        return;
+    }
+    const course = state.courses.find(c => c.id === assignment.courseId);
+    const submission = state.homeworkSubmissions.find(s => s.assignmentId === assignmentId && s.studentId === state.user.id);
+
+    const isStudent = state.user.role === 'student' || state.user.role === 'parent';
+    
+    let submissionHtml = '';
+    if (isStudent) {
+        let previewHtml = '';
+        if (submission?.fileUrl && submission.fileType?.startsWith('image/')) {
+            previewHtml = `<img src="${submission.fileUrl}" alt="Submission preview" class="submission-preview-img mx-auto">`;
+        }
+        
+        submissionHtml = `
+            <div class="mt-6 pt-6 border-t">
+                <h4 class="text-xl font-bold text-slate-700 mb-4">My Submission</h4>
+                ${submission ? `
+                    <div class="submission-list-item">
+                        <div>
+                            <p class="font-semibold">Submitted: ${submission.submittedAt?.toDate().toLocaleString()}</p>
+                            <a href="${submission.fileUrl}" target="_blank" class="submission-file-link mt-1">${submission.fileName}</a>
+                        </div>
+                        <span class="font-semibold text-sm py-1 px-3 rounded-full ${submission.status === 'graded' ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'} capitalize">${submission.status}</span>
+                    </div>
+                    ${submission.status === 'graded' ? `
+                        <div class="bg-slate-50 p-3 rounded-lg mt-3">
+                            <p><strong>Grade:</strong> ${submission.grade} / ${assignment.maxPoints}</p>
+                            <p><strong>Feedback:</strong> ${submission.feedback || 'No feedback provided.'}</p>
+                        </div>
+                    ` : ''}
+                ` : '<p class="text-slate-500">No submission yet.</p>'}
+                <form id="homework-upload-form" class="mt-4">
+                    <label for="homework-file-upload" class="file-upload-area">
+                        <svg class="mx-auto h-12 w-12 text-slate-400" stroke="currentColor" fill="none" viewBox="0 0 48 48" aria-hidden="true"><path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+                        <p class="mt-2 text-slate-600">Drag & drop a file here, or click to select.</p>
+                        <input id="homework-file-upload" name="file" type="file">
+                    </label>
+                    <div id="file-preview-container" class="mt-2"></div>
+                    <div id="upload-progress-container" class="mt-4 hidden"><div class="upload-progress-bar"><div id="upload-progress-bar-inner" style="width: 0%"></div></div></div>
+                    <button type="submit" class="w-full mt-4 bg-green-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-green-700">Submit</button>
+                </form>
+            </div>
+        `;
+    }
+
+    const title = `${course.name}: ${assignment.title}`;
+    const body = `
+        <p class="text-slate-600"><strong>Due Date:</strong> ${assignment.dueDate}</p>
+        <p class="text-slate-600"><strong>Points:</strong> ${assignment.maxPoints}</p>
+        ${submissionHtml}
+    `;
+    
+    openModal(title, body);
+
+    if (isStudent) {
+        const form = document.getElementById('homework-upload-form');
+        const fileInput = document.getElementById('homework-file-upload');
+        const fileArea = form.querySelector('.file-upload-area');
+        const previewContainer = document.getElementById('file-preview-container');
+
+        form.addEventListener('submit', (e) => window.handleHomeworkFileUpload(e, assignmentId));
+
+        fileArea.addEventListener('dragover', (e) => { e.preventDefault(); fileArea.classList.add('drag-over'); });
+        fileArea.addEventListener('dragleave', () => fileArea.classList.remove('drag-over'));
+        fileArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            fileArea.classList.remove('drag-over');
+            if (e.dataTransfer.files.length > 0) {
+                fileInput.files = e.dataTransfer.files;
+                fileInput.dispatchEvent(new Event('change'));
+            }
+        });
+
+        fileInput.addEventListener('change', () => {
+            previewContainer.innerHTML = '';
+            const file = fileInput.files[0];
+            if (file) {
+                previewContainer.innerHTML = `<p class="font-semibold text-center">${file.name}</p>`;
+                if (file.type.startsWith('image/')) {
+                    const reader = new FileReader();
+                    reader.onload = (e) => {
+                        previewContainer.innerHTML += `<img src="${e.target.result}" alt="Preview" class="submission-preview-img mx-auto">`;
+                    };
+                    reader.readAsDataURL(file);
+                }
+            }
+        });
+    }
+}
+
+export function renderReportCardModalContent(app, rc) {
+    const { state } = app;
+    const student = state.students.find(s => s.id === rc.studentId);
+
+    const componentRenderers = {
+        schoolHeader: () => `<div class="text-center mb-8"><h1 class="text-3xl font-bold">${state.school.name}</h1><h2 class="text-xl">Report Card</h2></div>`,
+        studentInfo: () => `<div class="mb-6"><p><strong>Student:</strong> ${rc.studentName}</p><p><strong>Grading Period:</strong> ${rc.periodName}</p><p><strong>Date Generated:</strong> ${rc.generatedAt.toDate().toLocaleDateString()}</p></div>`,
+        gradesTable: () => {
+            let html = '';
+            rc.data.courses?.forEach(course => {
+                html += `<h4 class="font-bold text-lg mt-6 mb-2">${course.name}</h4><table class="w-full text-sm"><thead><tr class="border-b bg-slate-50"><th class="text-left p-2">Assignment</th><th class="text-right p-2">Score</th></tr></thead><tbody>`;
+                (course.grades || []).forEach(g => {
+                    html += `<tr><td class="p-2 border-b">${g.title}</td><td class="p-2 border-b text-right">${g.score ?? 'N/A'} / ${g.maxPoints}</td></tr>`;
+                });
+                html += `</tbody><tfoot><tr class="font-bold"><td class="p-2">Final Grade</td><td class="p-2 text-right">${course.finalLetterGrade} (${course.finalGradePercent?.toFixed(1) ?? 'N/A'}%)</td></tr></tfoot></table>`;
+            });
+            return html;
+        },
+        finalGrade: () => {
+            let html = `<h4 class="font-bold text-lg mt-6 mb-2">Final Grades</h4><table class="w-full"><thead><tr class="border-b bg-slate-50"><th class="text-left p-2">Course</th><th class="text-right p-2">Grade</th></tr></thead><tbody>`;
+            rc.data.courses?.forEach(course => {
+                html += `<tr><td class="p-2 border-b">${course.name}</td><td class="p-2 border-b text-right">${course.finalLetterGrade} (${course.finalGradePercent?.toFixed(1) ?? 'N/A'}%)</td></tr>`;
+            });
+            return html + '</tbody></table>';
+        },
+        attendanceSummary: () => `<div class="mt-6"><h4 class="font-bold text-lg mb-2">Attendance Summary</h4><p><strong>Absences:</strong> ${rc.data.attendance?.absent || 0}</p><p><strong>Tardies:</strong> ${rc.data.attendance?.tardy || 0}</p></div>`,
+        gradingScale: () => `<div class="mt-6 text-xs"><h4 class="font-bold text-lg mb-2">Grading Scale</h4><p>A: 90-100 | B: 80-89 | C: 70-79 | D: 60-69 | F: <60</p></div>`,
+        teacherComments: () => `<div class="mt-6"><h4 class="font-bold text-lg mb-2">Teacher Comments</h4><div class="border h-24 p-2"></div></div>`,
+        principalComment: () => `<div class="mt-6"><h4 class="font-bold text-lg mb-2">Principal's Comment</h4><div class="border h-24 p-2"></div></div>`,
+        signatureLine: () => `<div class="mt-24 pt-4 border-t"><p>Signature</p></div>`,
+        pageBreak: () => `<div class="page-break"></div>`
+    };
+
+    const layout = rc.templateLayout || [];
+    let content = layout.map(component => (componentRenderers[component.type] || (() => ''))()).join('');
+    
+    return `<div id="printable-report-card" class="printable-report">${content}</div>`;
+}
+
+export function renderParentStatementModalContent(app, parent) {
+    const { state } = app;
+    const studentIds = parent.childrenIds || [];
+    const studentNames = state.students.filter(s => studentIds.includes(s.id)).map(s => s.displayName).join(', ');
+    const items = state.tuitionItems.filter(item => studentIds.includes(item.studentId));
+    const total = items.reduce((sum, item) => sum + (parseFloat(item.amount) || 0), 0);
+    
+    const itemsHtml = items.map(item => {
+        const student = state.students.find(s => s.id === item.studentId);
+        return `<tr><td class="p-2 border-b">${student?.displayName || ''}</td><td class="p-2 border-b">${item.description}</td><td class="p-2 border-b text-right">$${parseFloat(item.amount).toFixed(2)}</td></tr>`;
+    }).join('');
+
+    return `
+        <div id="printable-statement" class="printable-report">
+            <div class="text-center mb-8">
+                <h1 class="text-2xl font-bold">${state.school.name}</h1>
+                <h2 class="text-lg">Tuition Statement</h2>
+            </div>
+            <div class="mb-6">
+                <p><strong>To:</strong> ${parent.displayName}</p>
+                <p><strong>For Students:</strong> ${studentNames}</p>
+                <p><strong>Date:</strong> ${new Date().toLocaleDateString()}</p>
+            </div>
+            <table class="w-full text-left">
+                <thead class="bg-slate-50">
+                    <tr>
+                        <th class="p-2 font-bold border-b">Student</th>
+                        <th class="p-2 font-bold border-b">Description</th>
+                        <th class="p-2 font-bold border-b text-right">Amount</th>
+                    </tr>
+                </thead>
+                <tbody>${itemsHtml}</tbody>
+                <tfoot>
+                    <tr class="font-bold text-lg border-t-2">
+                        <td class="p-2" colspan="2">Total Amount Due</td>
+                        <td class="p-2 text-right">$${total.toFixed(2)}</td>
+                    </tr>
+                </tfoot>
+            </table>
+            <div class="mt-24 pt-4 border-t text-sm">
+                <p>Please make checks payable to ${state.school.name}. Thank you!</p>
+            </div>
+        </div>
+    `;
+}
+
+export function renderPrintableSchedule(app, studentId) {
+    const { state } = app;
+    const container = document.getElementById('printable-schedule-content');
+    if (!container) return;
+
+    const student = state.students.find(s => s.id === studentId);
+    if (!student) { container.innerHTML = 'Student not found.'; return; }
+    
+    const scheduleDoc = state.schedules.find(s => s.studentId === studentId);
+    const studentSchedule = scheduleDoc ? scheduleDoc.schedule : {};
+    
+    let html = `<div class="text-center mb-6"><h1 class="text-xl font-bold">${state.school.name}</h1><h2 class="text-lg">Weekly Schedule: ${student.displayName}</h2></div>`;
+    html += `<div class="space-y-6">`;
+
+    state.dayTypes.forEach(dayType => {
+        const timeBlocks = state.timeBlocks
+            .filter(tb => tb.dayTypeId === dayType.id)
+            .sort((a,b) => a.startTime.localeCompare(b.startTime));
+        
+        html += `<div><h3 class="text-lg font-bold mb-2">${dayType.name}</h3>`;
+        if (timeBlocks.length > 0) {
+            html += `<table class="printable-schedule-table"><thead><tr><th class="w-1/4">Time</th><th>Course</th><th class="w-1/4">Teacher</th></tr></thead><tbody>`;
+            timeBlocks.forEach(block => {
+                const courseId = studentSchedule[block.id];
+                const course = courseId ? state.courses.find(c => c.id === courseId) : null;
+                const teacher = course ? state.teachers.find(t => t.id === course.teacherId) : null;
+                html += `<tr><td>${block.startTime} - ${block.endTime}</td><td>${course ? course.name : '---'}</td><td>${teacher ? teacher.displayName : '---'}</td></tr>`;
+            });
+            html += `</tbody></table>`;
+        } else {
+            html += `<p>No classes scheduled.</p>`;
+        }
+        html += `</div>`;
+    });
+
+    html += `</div>`;
+    container.innerHTML = html;
+}
+
+export function renderBehaviorLog(app) {
+    setPageTitle('Behavior Log');
+    const { state } = app;
+    const content = document.getElementById('content');
+    if (!content) return;
+    
+    const isParent = state.user.role === 'parent';
+    const canLog = state.user.role === 'admin' || state.user.role === 'teacher';
+
+    const childrenIds = isParent ? state.user.childrenIds || [] : [];
+    const myIncidents = isParent ? state.incidents.filter(i => childrenIds.includes(i.studentId)) : state.incidents;
+
+    let studentSelector = '';
+    if (canLog) {
+        const studentOptions = state.students.map(s => `<option value="${s.id}">${s.displayName}</option>`).join('');
+        studentSelector = `
+            <div class="flex justify-end items-center mb-6">
+                <select id="log-student-select" class="p-2 border rounded-lg mr-2">
+                    <option value="">-- Select a Student to Log For --</option>
+                    ${studentOptions}
+                </select>
+                <button id="log-incident-btn" class="bg-primary-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-primary-600">Log New Incident</button>
+            </div>
+        `;
+    }
+
+    let incidentsHtml = '';
+    if (myIncidents.length > 0) {
+        incidentsHtml = `<div class="space-y-4">
+            ${myIncidents.map(incident => {
+                const student = state.students.find(s => s.id === incident.studentId);
+                const typeClass = incident.type || 'neutral';
+                const typeIcon = {
+                    positive: 'M14.707 12.293a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0l-2-2a1 1 0 011.414-1.414L9 14.586l3.293-3.293a1 1 0 011.414 0z',
+                    negative: 'M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z',
+                    neutral: 'M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z'
+                }[incident.type];
+
+                const canEdit = state.user.role === 'admin' || incident.reporterId === state.user.id;
+
+                return `<div class="incident-card ${typeClass}">
+                    <div class="incident-icon">
+                        <svg class="h-6 w-6" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="${typeIcon}" clip-rule="evenodd" /></svg>
+                    </div>
+                    <div class="flex-grow">
+                        <div class="flex justify-between items-start">
+                             <div>
+                                <p class="font-bold text-lg">${student?.displayName || 'Unknown Student'}</p>
+                                <p class="text-sm text-slate-500">${incident.date} &bull; Reported by ${incident.reporterName}</p>
+                             </div>
+                             ${canEdit ? `
+                                <div class="flex-shrink-0">
+                                    <button onclick="window.openIncidentModal('${incident.studentId}', '${incident.id}')" class="text-xs font-semibold text-yellow-600 hover:text-yellow-800">EDIT</button>
+                                    <button onclick="window.deleteIncident('${incident.id}')" class="text-xs font-semibold text-red-600 hover:text-red-800 ml-2">DELETE</button>
+                                </div>
+                             ` : ''}
+                        </div>
+                        <p class="mt-2 text-slate-700">${incident.description}</p>
+                    </div>
+                </div>`;
+            }).join('')}
+        </div>`;
+    } else {
+        incidentsHtml = `<p class="text-slate-500 text-center py-8">${isParent ? 'No behavior has been logged for your children.' : 'No incidents have been logged yet.'}</p>`;
+    }
+    
+    content.innerHTML = studentSelector + incidentsHtml;
+    
+    if (canLog) {
+        document.getElementById('log-incident-btn').addEventListener('click', () => {
+            const studentId = document.getElementById('log-student-select').value;
+            if (studentId) {
+                window.openIncidentModal(studentId);
+            } else {
+                showToast('Please select a student first.', 'error');
+            }
+        });
+    }
+}
+
+export function renderLunchMenu(app) {
+    setPageTitle('Lunch Menu');
+    const { state } = app;
+    const content = document.getElementById('content');
+    if (!content) return;
+    
+    const today = new Date();
+    const dayOfWeek = today.getDay();
+    const monday = new Date(today);
+    monday.setDate(today.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1));
+
+    const weekDates = [];
+    for (let i = 0; i < 5; i++) {
+        const day = new Date(monday);
+        day.setDate(monday.getDate() + i);
+        weekDates.push(day.toISOString().split('T')[0]);
+    }
+    const dayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
+
+    let menuHtml = weekDates.map((date, index) => {
+        const menu = state.lunchMenu.find(m => m.id === date);
+        const menuItems = menu ? menu.items : [];
+        return `<div class="menu-day-card">
+            <h4>${dayNames[index]}</h4>
+            ${menuItems.length > 0 ? `<ul>${menuItems.map(item => `<li>${item}</li>`).join('')}</ul>` : `<p class="text-slate-500">Menu not available.</p>`}
+        </div>`;
+    }).join('');
+
+    content.innerHTML = `
+        <div class="flex justify-between items-center mb-6">
+            <h3 class="text-2xl font-bold text-slate-700">This Week's Lunch Menu</h3>
+            ${state.user.role === 'admin' ? `<a href="#/settings?tab=lunch_menu" class="bg-primary-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-primary-600">Manage Menu</a>` : ''}
+        </div>
+        <div class="lunch-menu-grid">${menuHtml}</div>
+    `;
+}
